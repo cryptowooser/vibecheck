@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import inspect
+from pathlib import Path
 import sys
 from typing import Any, Callable
 
@@ -10,6 +11,16 @@ import uvicorn
 from vibecheck.app import create_app
 from vibecheck.bridge import SessionBridge, VibeRuntime, load_vibe_runtime, session_manager
 from vibecheck.tui_bridge import TuiBridge
+
+try:
+    from vibe.core.autocompletion.path_prompt_adapter import (
+        render_path_prompt as _render_path_prompt,
+    )
+except Exception:  # pragma: no cover - exercised when Vibe is unavailable
+
+    def _render_path_prompt(prompt: str, base_dir: Path) -> str:
+        _ = base_dir
+        return prompt
 
 
 def _fallback_vibe_parser(argv: list[str]) -> argparse.Namespace:
@@ -179,7 +190,12 @@ class VibeCheckApp(_BaseVibeApp):
         # Intentional parity tradeoff: the bridge queue serializes turns, but this
         # bypasses Vibe's native loading widget / interrupt / history refresh path.
         # See docs/ANALYSIS-session-attachment.md (Phase 3 Validation: Gap 3).
-        injected = self._bridge.inject_message(prompt)
+        try:
+            rendered_prompt = _render_path_prompt(prompt, base_dir=Path.cwd())
+        except Exception:
+            rendered_prompt = prompt
+
+        injected = self._bridge.inject_message(rendered_prompt)
         if injected:
             return
 

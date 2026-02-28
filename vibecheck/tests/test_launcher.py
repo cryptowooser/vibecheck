@@ -172,7 +172,20 @@ async def test_on_mount_rebinds_callbacks_and_intercepts_future_rebinds(
         self.agent_loop.set_approval_callback(lambda *_args: ("yes", None))
         self.agent_loop.set_user_input_callback(lambda *_args: {"response": "ok"})
 
+    def fake_super_init(self, *_args, **kwargs) -> None:
+        self.agent_loop = kwargs.get("agent_loop")
+        self.event_handler = None
+        self._loading_widget = None
+
+    def fake_run_worker(self, worker, *, exclusive: bool = False) -> None:
+        _ = exclusive
+        close = getattr(worker, "close", None)
+        if callable(close):
+            close()
+
+    monkeypatch.setattr(launcher._BaseVibeApp, "__init__", fake_super_init, raising=False)
     monkeypatch.setattr(launcher._BaseVibeApp, "on_mount", fake_super_on_mount, raising=False)
+    monkeypatch.setattr(launcher.VibeCheckApp, "run_worker", fake_run_worker, raising=False)
 
     loop = Loop()
     bridge = Bridge()
@@ -199,6 +212,47 @@ async def test_on_mount_rebinds_callbacks_and_intercepts_future_rebinds(
     loop.set_user_input_callback(lambda *_args: {"response": "later"})
     assert loop.approval_callback.__func__ is bridge._approval_callback.__func__
     assert loop.user_input_callback.__func__ is bridge._user_input_callback.__func__
+
+
+@pytest.mark.asyncio
+async def test_handle_agent_loop_turn_renders_prompt_before_bridge_injection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class Loop:
+        pass
+
+    class Bridge:
+        def __init__(self) -> None:
+            self.injected: list[str] = []
+
+        def inject_message(self, prompt: str) -> bool:
+            self.injected.append(prompt)
+            return True
+
+    render_calls: list[tuple[str, Path]] = []
+
+    def fake_render(prompt: str, base_dir: Path) -> str:
+        render_calls.append((prompt, base_dir))
+        return f"rendered:{prompt}"
+
+    def fake_super_init(self, *_args, **kwargs) -> None:
+        self.agent_loop = kwargs.get("agent_loop")
+
+    monkeypatch.setattr(launcher._BaseVibeApp, "__init__", fake_super_init, raising=False)
+    monkeypatch.setattr(launcher, "_render_path_prompt", fake_render, raising=False)
+
+    bridge = Bridge()
+    app = launcher.VibeCheckApp(
+        agent_loop=Loop(),
+        bridge=bridge,
+        ws_port=9001,
+        api_app=object(),
+    )
+
+    await app._handle_agent_loop_turn("check @README.md")
+
+    assert bridge.injected == ["rendered:check @README.md"]
+    assert render_calls == [("check @README.md", Path.cwd())]
 
 
 def test_vibecheck_vibe_script_registered() -> None:

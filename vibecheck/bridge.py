@@ -107,6 +107,8 @@ class SessionBridge:
         self._message_observer_hooked = False
         self._local_approval_callback: Callable[[str, object, str], object] | None = None
         self._local_input_callback: Callable[[object], object] | None = None
+        self._local_approval_owner: object | None = None
+        self._local_input_owner: object | None = None
 
     @property
     def controllable(self) -> bool:
@@ -140,6 +142,95 @@ class SessionBridge:
     ) -> None:
         self._local_approval_callback = approval_callback
         self._local_input_callback = input_callback
+        self._local_approval_owner = self._resolve_callback_owner(
+            approval_callback,
+            pending_attr="_pending_approval",
+            fallback_owner=self._local_approval_owner,
+        )
+        self._local_input_owner = self._resolve_callback_owner(
+            input_callback,
+            pending_attr="_pending_question",
+            fallback_owner=self._local_input_owner,
+        )
+
+    def _resolve_callback_owner(
+        self,
+        callback: object,
+        *,
+        pending_attr: str,
+        fallback_owner: object | None,
+    ) -> object | None:
+        if not callable(callback):
+            return None
+
+        visited: set[int] = set()
+        to_visit: list[object] = [callback]
+        while to_visit:
+            current = to_visit.pop()
+            current_id = id(current)
+            if current_id in visited:
+                continue
+            visited.add(current_id)
+
+            owner = getattr(current, "__self__", None)
+            if owner is not None and hasattr(owner, pending_attr):
+                return owner
+
+            if hasattr(current, pending_attr):
+                return current
+
+            for attr_name in ("__wrapped__", "__func__", "func"):
+                nested = getattr(current, attr_name, None)
+                if nested is not None and nested is not current:
+                    to_visit.append(nested)
+
+            partial_args = getattr(current, "args", None)
+            if isinstance(partial_args, tuple):
+                to_visit.extend(item for item in partial_args if item is not current)
+
+            partial_keywords = getattr(current, "keywords", None)
+            if isinstance(partial_keywords, dict):
+                to_visit.extend(
+                    item for item in partial_keywords.values() if item is not current
+                )
+
+            closure = getattr(current, "__closure__", None)
+            if isinstance(closure, tuple):
+                for cell in closure:
+                    try:
+                        value = cell.cell_contents
+                    except ValueError:
+                        continue
+                    if value is current:
+                        continue
+                    if hasattr(value, pending_attr):
+                        return value
+                    if callable(value):
+                        to_visit.append(value)
+
+        return fallback_owner
+
+    def _local_owner_for_settle(
+        self,
+        callback: object,
+        *,
+        pending_attr: str,
+        owner_hint: object | None,
+        callback_label: str,
+    ) -> object | None:
+        owner = self._resolve_callback_owner(
+            callback,
+            pending_attr=pending_attr,
+            fallback_owner=owner_hint,
+        )
+        if owner is None and callable(callback):
+            logger.warning(
+                "Failed to resolve local %s callback owner for session %s; "
+                "mobile settlement cannot complete local pending state",
+                callback_label,
+                self.session_id,
+            )
+        return owner
 
     async def _notify_event_listeners(self, event: Event) -> None:
         for listener in list(self._event_listeners):
@@ -460,7 +551,7 @@ class SessionBridge:
 
         return ""
 
-    def _reset_local_owner_ui(self, owner: object) -> None:
+    def _call_switch_to_input_app(self, owner: object) -> None:
         switch_to_input = getattr(owner, "_switch_to_input_app", None)
         if not callable(switch_to_input):
             return
@@ -488,9 +579,31 @@ class SessionBridge:
         task = loop.create_task(maybe_awaitable)
         self._track_task(task)
 
+    def _reset_local_owner_ui(self, owner: object) -> None:
+        self._call_switch_to_input_app(owner)
+
+        async def follow_up_reset() -> None:
+            await asyncio.sleep(0)
+            self._call_switch_to_input_app(owner)
+
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+
+        task = loop.create_task(follow_up_reset())
+        self._track_task(task)
+
     def _settle_local_approval_state(self, approved: bool, edited_args: dict | None = None) -> None:
         callback = self._local_approval_callback
-        owner = getattr(callback, "__self__", None)
+        owner = self._local_owner_for_settle(
+            callback,
+            pending_attr="_pending_approval",
+            owner_hint=self._local_approval_owner,
+            callback_label="approval",
+        )
+        if owner is not None:
+            self._local_approval_owner = owner
         pending = getattr(owner, "_pending_approval", None)
         if not isinstance(pending, asyncio.Future) or pending.done():
             return
@@ -506,7 +619,14 @@ class SessionBridge:
 
     def _settle_local_input_state(self, response: str) -> None:
         callback = self._local_input_callback
-        owner = getattr(callback, "__self__", None)
+        owner = self._local_owner_for_settle(
+            callback,
+            pending_attr="_pending_question",
+            owner_hint=self._local_input_owner,
+            callback_label="input",
+        )
+        if owner is not None:
+            self._local_input_owner = owner
         pending = getattr(owner, "_pending_question", None)
         if not isinstance(pending, asyncio.Future) or pending.done():
             return

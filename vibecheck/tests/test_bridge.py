@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import functools
 import json
 from pathlib import Path
 
@@ -609,6 +610,72 @@ async def test_mobile_resolution_does_not_leave_local_pending_state_stuck() -> N
     await _wait_until(lambda: owner._pending_question is None)
     await _wait_until(lambda: owner.switch_to_input_calls >= 2)
     await _wait_until(lambda: bridge.state == "idle")
+
+
+@pytest.mark.asyncio
+async def test_settle_local_state_resolves_wrapped_and_partial_callbacks() -> None:
+    class Owner:
+        def __init__(self) -> None:
+            self._pending_approval = None
+            self._pending_question = None
+            self.switch_to_input_calls = 0
+
+        async def approval_callback(self, _tool: str, _args: object, _call_id: str):
+            return (FakeApprovalResponse.YES, None)
+
+        async def input_callback(self, _args: object):
+            return "yes"
+
+        async def _switch_to_input_app(self) -> None:
+            self.switch_to_input_calls += 1
+
+    owner = Owner()
+    bridge = SessionBridge("wrapped-owner")
+
+    async def wrapped_approval(tool: str, args: object, call_id: str):
+        return await owner.approval_callback(tool, args, call_id)
+
+    def invoke_input(callback, args: object):
+        return callback(args)
+
+    wrapped_input = functools.partial(invoke_input, owner.input_callback)
+    bridge.configure_local_callbacks(
+        approval_callback=wrapped_approval,
+        input_callback=wrapped_input,
+    )
+
+    owner._pending_approval = asyncio.get_running_loop().create_future()
+    bridge._settle_local_approval_state(approved=True)
+    assert owner._pending_approval.done()
+
+    owner._pending_question = asyncio.get_running_loop().create_future()
+    bridge._settle_local_input_state(response="yes")
+    assert owner._pending_question.done()
+
+    await _wait_until(lambda: owner.switch_to_input_calls >= 2)
+
+
+@pytest.mark.asyncio
+async def test_settle_local_state_schedules_follow_up_ui_reset() -> None:
+    class Owner:
+        def __init__(self) -> None:
+            self._pending_approval = None
+            self.switch_to_input_calls = 0
+
+        async def approval_callback(self, _tool: str, _args: object, _call_id: str):
+            return (FakeApprovalResponse.YES, None)
+
+        async def _switch_to_input_app(self) -> None:
+            self.switch_to_input_calls += 1
+
+    owner = Owner()
+    bridge = SessionBridge("follow-up-reset")
+    bridge.configure_local_callbacks(approval_callback=owner.approval_callback, input_callback=None)
+
+    owner._pending_approval = asyncio.get_running_loop().create_future()
+    bridge._settle_local_approval_state(approved=True)
+
+    await _wait_until(lambda: owner.switch_to_input_calls >= 2)
 
 
 @pytest.mark.asyncio
