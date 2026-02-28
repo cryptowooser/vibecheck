@@ -49,4 +49,13 @@ The frontend dev server proxies `/api/*` to `http://localhost:8780`.
 ```bash
 cd frontend-prototype/server && uv run pytest tests -v
 cd frontend-prototype/frontend && npm run build
+cd frontend-prototype/frontend && npm run test
+cd frontend-prototype/frontend && npm run test:e2e
+cd frontend-prototype/frontend && npm run test:secrets
 ```
+
+## Manual Mobile QA
+
+Run physical-device checks for Milestone 5 using:
+
+- `frontend-prototype/MOBILE-QA-CHECKLIST.md`

@@ -48,9 +48,11 @@
   let currentAudio = null
   let currentAudioUrl = ''
   let requestInFlight = false
+  let micPermissionInFlight = false
 
   const isRecording = () => uiState === STATE_RECORDING
   const isBusy = () => uiState === STATE_TRANSCRIBING || uiState === STATE_SPEAKING
+  const isRecordActionDisabled = () => isBusy() || requestInFlight || micPermissionInFlight
 
   onMount(() => {
     loadVoices().catch((error) => {
@@ -151,7 +153,7 @@
   }
 
   async function startRecording() {
-    if (isBusy() || isRecording()) {
+    if (isRecording() || isRecordActionDisabled()) {
       return
     }
     if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
@@ -163,10 +165,12 @@
     transcript = ''
     lastRecordingBlob = null
     statusMessage = 'Requesting microphone access...'
+    micPermissionInFlight = true
 
+    let grantedStream = null
     try {
       stopAudio()
-      mediaStream = await navigator.mediaDevices.getUserMedia({
+      grantedStream = await navigator.mediaDevices.getUserMedia({
         audio: {
           echoCancellation: true,
           noiseSuppression: true,
@@ -175,8 +179,11 @@
       })
     } catch {
       setError('stt', 'Microphone permission denied. Allow access and try again.')
+      micPermissionInFlight = false
       return
     }
+    micPermissionInFlight = false
+    mediaStream = grantedStream
 
     const recordingStartedAt = Date.now()
     const recordingChunks = []
@@ -400,7 +407,11 @@
 
   <section class={`card controls state-surface state-${uiState}`}>
     <label for="voice-select">Voice</label>
-    <select id="voice-select" bind:value={selectedVoiceId} disabled={isRecording() || isBusy()}>
+    <select
+      id="voice-select"
+      bind:value={selectedVoiceId}
+      disabled={isRecording() || isBusy() || requestInFlight || micPermissionInFlight}
+    >
       {#each voices as voice}
         <option value={voice.voice_id}>{voice.name}</option>
       {/each}
@@ -409,7 +420,7 @@
     {#if isRecording()}
       <button class="action action-stop" onclick={stopRecording}>Stop</button>
     {:else}
-      <button class="action action-record" onclick={startRecording} disabled={isBusy()}>
+      <button class="action action-record" onclick={startRecording} disabled={isRecordActionDisabled()}>
         Record
       </button>
     {/if}
@@ -426,7 +437,7 @@
         <button
           class={`preview-button preview-${state} ${uiState === state ? 'is-active' : ''}`}
           onclick={() => previewState(state)}
-          disabled={requestInFlight}
+          disabled={requestInFlight || micPermissionInFlight}
         >
           {state}
         </button>
@@ -449,12 +460,20 @@
       <p>{errorMessage}</p>
       <div class="retry-row">
         {#if lastFailedStage === 'stt' && lastRecordingBlob}
-          <button class="secondary" onclick={retryStt} disabled={requestInFlight || isRecording()}>
+          <button
+            class="secondary"
+            onclick={retryStt}
+            disabled={requestInFlight || micPermissionInFlight || isRecording()}
+          >
             Retry STT
           </button>
         {/if}
         {#if lastFailedStage === 'tts' && transcript}
-          <button class="secondary" onclick={retryTts} disabled={requestInFlight || isRecording()}>
+          <button
+            class="secondary"
+            onclick={retryTts}
+            disabled={requestInFlight || micPermissionInFlight || isRecording()}
+          >
             Retry TTS
           </button>
         {/if}

@@ -107,6 +107,22 @@ test('mobile UI renders and state preview transitions work', async ({ page }) =>
   await expect(page.getByRole('status')).toHaveText('Previewing error state')
 })
 
+test('mobile UI falls back to built-in voices when /api/voices fails', async ({ page }) => {
+  await page.route('**/api/voices', async (route) => {
+    await route.fulfill({
+      status: 503,
+      contentType: 'application/json',
+      body: JSON.stringify({ detail: 'unavailable' }),
+    })
+  })
+
+  await page.goto('/')
+
+  await expect(page.getByRole('combobox', { name: 'Voice' })).toBeVisible()
+  await expect(page.locator('#voice-select option')).toHaveCount(3)
+  await expect(page.locator('#voice-select option')).toHaveText(['George', 'Bella', 'Adam'])
+})
+
 test('mobile voice loop runs STT to TTS playback with selected voice', async ({ page }) => {
   await installVoiceLoopBrowserMocks(page)
   await stubVoices(page)

@@ -258,3 +258,27 @@
   - `cd frontend-prototype/frontend && npm run build` -> succeeded.
   - `cd frontend-prototype/server && uv run pytest tests -v` -> 18 passed.
   - `cd frontend-prototype/frontend && rg -n "MISTRAL_API_KEY|ELEVENLABS_API_KEY|api\\.mistral\\.ai|api\\.elevenlabs\\.io|xi-api-key|Authorization" src dist --glob '!src/**/*.test.js'` -> no matches.
+
+### Frontend prototype milestone 5 reviewer follow-up fixes
+- Addressed high-severity race in `frontend-prototype/frontend/src/App.svelte`:
+  - added `micPermissionInFlight` lock to prevent concurrent `startRecording()` re-entry while `getUserMedia()` is pending.
+  - updated `Record` button guard/disabled conditions to include explicit in-flight locks (`requestInFlight`, `micPermissionInFlight`) rather than relying only on `uiState`.
+- Added red-first unit coverage in `frontend-prototype/frontend/src/App.test.js`:
+  - `blocks a second record start while microphone permission request is still pending` (failed before fix, passed after).
+  - `keeps controls disabled while retry tts request is in flight` to cover missing reviewer-noted path.
+- Expanded e2e coverage in `frontend-prototype/frontend/e2e/mobile-smoke.spec.js`:
+  - `/api/voices` failure fallback to built-in voice list (`George`, `Bella`, `Adam`).
+- Added repeatable frontend secret-scan gate:
+  - new script `frontend-prototype/frontend/scripts/check-no-secrets.mjs`.
+  - new npm command `npm run test:secrets`.
+- Added manual phone QA execution artifact:
+  - `frontend-prototype/MOBILE-QA-CHECKLIST.md` for physical iOS Safari + Android Chrome validation.
+- Updated `frontend-prototype/README.md` to include `test`, `test:e2e`, and `test:secrets` commands and manual checklist reference.
+- Verification:
+  - `cd frontend-prototype/frontend && npm test` -> 25 passed.
+  - `cd frontend-prototype/frontend && npm run test:e2e` -> 14 passed (`Mobile Chrome`, `Mobile Safari`).
+  - `cd frontend-prototype/frontend && npm run build` -> succeeded.
+  - `cd frontend-prototype/frontend && npm run test:secrets` -> passed.
+  - `cd frontend-prototype/server && uv run pytest tests -v` -> 18 passed.
+- Note:
+  - Physical-device manual QA is still pending execution by a teammate with access to iOS Safari and Android Chrome hardware.

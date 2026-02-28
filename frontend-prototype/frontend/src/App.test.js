@@ -1154,6 +1154,105 @@ describe('App milestone 5 hardening and stability', () => {
     }
   })
 
+  it('blocks a second record start while microphone permission request is still pending', async () => {
+    fetchMock = vi.fn(async (resource) => {
+      if (resource === '/api/voices') {
+        return jsonResponse({
+          voices: [{ voice_id: 'voice-one', name: 'Voice One' }],
+        })
+      }
+      return jsonResponse({ detail: 'Not found' }, 404)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const stopTrack = vi.fn()
+    const micPermissionDeferred = createDeferred()
+    const getUserMedia = vi.fn().mockReturnValue(micPermissionDeferred.promise)
+    const restoreMediaDevices = installMediaDevices(getUserMedia)
+    installRecorderMock({ chunkBytes: 4096 })
+
+    try {
+      render(App)
+
+      await fireEvent.click(screen.getByRole('button', { name: 'Record' }))
+      await fireEvent.click(screen.getByRole('button', { name: 'Record' }))
+
+      expect(getUserMedia).toHaveBeenCalledTimes(1)
+      expect(screen.getByRole('button', { name: 'Record' })).toBeDisabled()
+      expect(screen.getByTestId('status-message')).toHaveTextContent('Requesting microphone access...')
+
+      micPermissionDeferred.resolve({ getTracks: () => [{ stop: stopTrack }] })
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: 'Stop' })).toBeInTheDocument()
+      })
+    } finally {
+      restoreMediaDevices()
+    }
+  })
+
+  it('keeps controls disabled while retry tts request is in flight', async () => {
+    const retryTtsDeferred = createDeferred()
+    let ttsAttempts = 0
+
+    fetchMock = vi.fn(async (resource) => {
+      if (resource === '/api/voices') {
+        return jsonResponse({
+          voices: [{ voice_id: 'voice-one', name: 'Voice One' }],
+        })
+      }
+      if (resource === '/api/stt') {
+        return jsonResponse({ text: 'retry me', language: 'en' })
+      }
+      if (resource === '/api/tts') {
+        ttsAttempts += 1
+        if (ttsAttempts === 1) {
+          return jsonResponse({ detail: 'TTS upstream unavailable' }, 502)
+        }
+        return retryTtsDeferred.promise
+      }
+      return jsonResponse({ detail: 'Not found' }, 404)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const restoreMediaDevices = installMediaDevices(vi.fn().mockResolvedValue({ getTracks: () => [] }))
+    installRecorderMock({ chunkBytes: 4096 })
+    installDateNowIncrementMock(400)
+
+    try {
+      render(App)
+
+      await fireEvent.click(screen.getByRole('button', { name: 'Record' }))
+      await fireEvent.click(screen.getByRole('button', { name: 'Stop' }))
+      await screen.findByRole('button', { name: 'Retry TTS' })
+
+      await fireEvent.click(screen.getByRole('button', { name: 'Retry TTS' }))
+
+      await waitFor(() => {
+        expect(screen.getByTestId('state-pill')).toHaveTextContent('speaking')
+      })
+      expect(screen.getByRole('combobox', { name: 'Voice' })).toBeDisabled()
+      expect(screen.getByRole('button', { name: 'Record' })).toBeDisabled()
+      expect(screen.getByRole('button', { name: 'idle' })).toBeDisabled()
+      expect(screen.getByRole('button', { name: 'recording' })).toBeDisabled()
+      expect(screen.getByRole('button', { name: 'transcribing' })).toBeDisabled()
+      expect(screen.getByRole('button', { name: 'speaking' })).toBeDisabled()
+      expect(screen.getByRole('button', { name: 'error' })).toBeDisabled()
+
+      retryTtsDeferred.resolve(
+        new Response(new Uint8Array([73, 68, 51]), {
+          status: 200,
+          headers: { 'Content-Type': 'audio/mpeg' },
+        }),
+      )
+      await waitFor(() => {
+        expect(screen.getByTestId('state-pill')).toHaveTextContent('idle')
+      })
+      expect(screen.getByTestId('status-message')).toHaveTextContent('Playback complete')
+    } finally {
+      restoreMediaDevices()
+    }
+  })
+
   it('sends browser requests only to proxy endpoints without provider API auth headers', async () => {
     let sttHeaders = null
     let ttsHeaders = null
