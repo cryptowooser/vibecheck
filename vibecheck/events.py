@@ -66,6 +66,8 @@ class InputResolutionEvent(EventBase):
 class StateChangeEvent(EventBase):
     type: Literal["state"] = "state"
     state: Literal["idle", "running", "waiting_approval", "waiting_input", "disconnected"]
+    attach_mode: Literal["live", "replay", "observe_only", "managed"] | None = None
+    controllable: bool | None = None
 
 
 class UserMessageEvent(EventBase):

@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
+import inspect
 from importlib import import_module
 import json
 from collections import deque
 from pathlib import Path
 import sys
-from typing import Any, Literal
+from typing import Any, Callable, Literal
 from uuid import uuid4
 
 from vibecheck.events import (
@@ -24,6 +25,8 @@ from vibecheck.events import (
 )
 
 BridgeState = Literal["idle", "running", "waiting_approval", "waiting_input", "disconnected"]
+AttachMode = Literal["live", "replay", "observe_only", "managed"]
+EventListener = Callable[[Event], object]
 
 
 @dataclass(frozen=True, slots=True)
@@ -71,9 +74,15 @@ def load_vibe_runtime() -> VibeRuntime:
 
 
 class SessionBridge:
-    def __init__(self, session_id: str, connection_manager=None) -> None:
+    def __init__(
+        self,
+        session_id: str,
+        connection_manager=None,
+        attach_mode: AttachMode = "managed",
+    ) -> None:
         self.session_id = session_id
         self.state: BridgeState = "idle"
+        self.attach_mode: AttachMode = attach_mode
         self.pending_approval: dict[str, asyncio.Future] = {}
         self.pending_input: dict[str, asyncio.Future] = {}
         self.pending_approval_context: dict[str, dict[str, object]] = {}
@@ -81,6 +90,7 @@ class SessionBridge:
         self.event_backlog: deque[Event] = deque(maxlen=50)
         self.connection_manager = connection_manager
         self.messages_to_inject: list[str] = []
+        self._event_listeners: set[EventListener] = set()
 
         self._background_tasks: set[asyncio.Task[object]] = set()
         self._message_queue: asyncio.Queue[str] = asyncio.Queue()
@@ -89,9 +99,49 @@ class SessionBridge:
         self._agent_loop: object | None = None
         self._vibe_runtime: VibeRuntime | None = None
         self._observed_message_ids: set[str] = set()
+        self._message_observer_hooked = False
+
+    @property
+    def controllable(self) -> bool:
+        return self.attach_mode != "observe_only"
+
+    def add_event_listener(self, listener: EventListener) -> None:
+        self._event_listeners.add(listener)
+
+    def remove_event_listener(self, listener: EventListener) -> None:
+        self._event_listeners.discard(listener)
+
+    async def _notify_event_listeners(self, event: Event) -> None:
+        for listener in list(self._event_listeners):
+            try:
+                result = listener(event)
+                if inspect.isawaitable(result):
+                    await result
+            except Exception:
+                continue
+
+    def _notify_event_listeners_background(self, event: Event) -> None:
+        if not self._event_listeners:
+            return
+
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            for listener in list(self._event_listeners):
+                try:
+                    result = listener(event)
+                    if inspect.isawaitable(result):
+                        continue
+                except Exception:
+                    continue
+            return
+
+        task = loop.create_task(self._notify_event_listeners(event))
+        self._track_task(task)
 
     async def _broadcast(self, event: Event) -> None:
         self.add_event(event)
+        await self._notify_event_listeners(event)
         if self.connection_manager:
             await self.connection_manager.broadcast(self.session_id, event)
 
@@ -101,6 +151,7 @@ class SessionBridge:
 
     def _broadcast_background(self, event: Event) -> None:
         self.add_event(event)
+        self._notify_event_listeners_background(event)
         if not self.connection_manager:
             return
         try:
@@ -120,7 +171,13 @@ class SessionBridge:
         if self.state == state:
             return
         self.state = state
-        self._broadcast_background(StateChangeEvent(state=state))
+        self._broadcast_background(
+            StateChangeEvent(
+                state=state,
+                attach_mode=self.attach_mode,
+                controllable=self.controllable,
+            )
+        )
 
     async def request_approval(self, call_id: str, tool_name: str, args: dict) -> dict:
         future: asyncio.Future = asyncio.get_running_loop().create_future()
@@ -349,6 +406,42 @@ class SessionBridge:
 
         return None
 
+    def _wire_callbacks(self, agent_loop: object) -> None:
+        if hasattr(agent_loop, "set_approval_callback"):
+            agent_loop.set_approval_callback(self._approval_callback)
+        if hasattr(agent_loop, "set_user_input_callback"):
+            agent_loop.set_user_input_callback(self._user_input_callback)
+
+    def _wire_message_observer(self, agent_loop: object) -> None:
+        if self._message_observer_hooked:
+            return
+
+        existing = getattr(agent_loop, "message_observer", None)
+
+        def chained(message: object) -> None:
+            self._on_message_observed(message)
+            if callable(existing) and existing is not self._on_message_observed:
+                existing(message)
+
+        try:
+            setattr(agent_loop, "message_observer", chained)
+            self._message_observer_hooked = True
+        except Exception:
+            self._message_observer_hooked = False
+
+    def attach_to_loop(
+        self,
+        agent_loop: object,
+        vibe_runtime: VibeRuntime | None = None,
+    ) -> None:
+        self._agent_loop = agent_loop
+        self._message_observer_hooked = False
+        if vibe_runtime is not None:
+            self._vibe_runtime = vibe_runtime
+        self.attach_mode = "live"
+        self._wire_callbacks(agent_loop)
+        self._wire_message_observer(agent_loop)
+
     def _ensure_agent_loop(self) -> None:
         if self._agent_loop is not None:
             return
@@ -367,8 +460,10 @@ class SessionBridge:
                 message_observer=self._on_message_observed,
             )
 
-        agent_loop.set_approval_callback(self._approval_callback)
-        agent_loop.set_user_input_callback(self._user_input_callback)
+        self.attach_mode = "managed"
+        self._message_observer_hooked = False
+        self._wire_callbacks(agent_loop)
+        self._wire_message_observer(agent_loop)
         self._agent_loop = agent_loop
         self._vibe_runtime = runtime
 
@@ -422,6 +517,9 @@ class SessionBridge:
 
     def inject_message(self, content: str) -> bool:
         self.messages_to_inject.append(content)
+        if not self.controllable:
+            self._set_state("idle")
+            return False
 
         if self._agent_loop is None:
             try:
@@ -459,7 +557,11 @@ class SessionBridge:
         self._set_state("disconnected")
 
     def state_payload(self) -> dict:
-        payload: dict[str, object] = {"state": self.state}
+        payload: dict[str, object] = {
+            "state": self.state,
+            "attach_mode": self.attach_mode,
+            "controllable": self.controllable,
+        }
         if self.pending_approval:
             call_id = next(iter(self.pending_approval.keys()))
             context = self.pending_approval_context.get(call_id, {})
@@ -515,6 +617,16 @@ class SessionManager:
                     "last_activity": meta.get("end_time") or meta.get("start_time"),
                     "message_count": self._message_count(session_dir),
                     "status": self.sessions.get(session_id).state if session_id in self.sessions else "disconnected",
+                    "attach_mode": (
+                        self.sessions[session_id].attach_mode
+                        if session_id in self.sessions
+                        else "observe_only"
+                    ),
+                    "controllable": (
+                        self.sessions[session_id].controllable
+                        if session_id in self.sessions
+                        else False
+                    ),
                 }
             )
         return discovered
@@ -525,10 +637,26 @@ class SessionManager:
             return 0
         return sum(1 for _ in messages_file.open("r", encoding="utf-8"))
 
-    def attach(self, session_id: str) -> SessionBridge:
+    def attach(
+        self,
+        session_id: str,
+        attach_mode: AttachMode | None = None,
+    ) -> SessionBridge:
         if session_id in self.sessions:
-            return self.sessions[session_id]
-        bridge = SessionBridge(session_id=session_id, connection_manager=self.connection_manager)
+            bridge = self.sessions[session_id]
+            if attach_mode is not None:
+                bridge.attach_mode = attach_mode
+            return bridge
+
+        mode = attach_mode
+        if mode is None:
+            mode = "observe_only" if any(item["id"] == session_id for item in self.discover()) else "managed"
+
+        bridge = SessionBridge(
+            session_id=session_id,
+            connection_manager=self.connection_manager,
+            attach_mode=mode,
+        )
         self.sessions[session_id] = bridge
         return bridge
 
@@ -543,7 +671,7 @@ class SessionManager:
         message: str,
         working_dir: Path | None = None,
     ) -> SessionBridge:
-        bridge = self.attach(session_id)
+        bridge = self.attach(session_id, attach_mode="managed")
         await bridge.start_session(message=message, working_dir=working_dir)
         return bridge
 
@@ -568,9 +696,13 @@ class SessionManager:
                     "last_activity": None,
                     "message_count": len(bridge.event_backlog),
                     "status": bridge.state,
+                    "attach_mode": bridge.attach_mode,
+                    "controllable": bridge.controllable,
                 }
             else:
                 discovered[session_id]["status"] = bridge.state
+                discovered[session_id]["attach_mode"] = bridge.attach_mode
+                discovered[session_id]["controllable"] = bridge.controllable
         return list(discovered.values())
 
     def fleet_status(self) -> dict[str, int]:
@@ -594,6 +726,8 @@ class SessionManager:
             return {
                 "id": bridge.session_id,
                 "state": bridge.state,
+                "attach_mode": bridge.attach_mode,
+                "controllable": bridge.controllable,
                 "pending_approval": list(bridge.pending_approval.keys()),
                 "pending_input": list(bridge.pending_input.keys()),
                 "backlog": [event.model_dump(mode="json") for event in bridge.backlog()],
@@ -606,6 +740,8 @@ class SessionManager:
         return {
             "id": session_id,
             "state": "disconnected",
+            "attach_mode": "observe_only",
+            "controllable": False,
             "pending_approval": [],
             "pending_input": [],
             "backlog": [],

@@ -108,7 +108,14 @@ async def events(websocket: WebSocket, session_id: str) -> None:
 
     bridge = session_manager.attach(session_id)
     await manager.send_personal(websocket, ConnectedEvent(session_id=session_id))
-    await manager.send_personal(websocket, StateChangeEvent(state=bridge.state))
+    await manager.send_personal(
+        websocket,
+        StateChangeEvent(
+            state=bridge.state,
+            attach_mode=bridge.attach_mode,
+            controllable=bridge.controllable,
+        ),
+    )
     for event in bridge.backlog():
         await manager.send_personal(websocket, event)
 

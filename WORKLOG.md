@@ -167,3 +167,28 @@
   7. **Low fixed:** Updated WU range from WU-27 to WU-31 in README.md and AGENTS.md.
 - Added explicit Textual + uvicorn spike step in WU-27 (highest technical risk).
 - Files changed: `docs/ANALYSIS-session-attachment.md`, `docs/PLAN.md`, `docs/IMPLEMENTATION.md`, `README.md`, `AGENTS.md`
+
+### Phase 3 implementation (WU-25 to WU-28)
+- Implemented live-attach bridge capabilities in `vibecheck/bridge.py`:
+  - Added `attach_to_loop(agent_loop, vibe_runtime)` for wiring callbacks/message observer onto an existing AgentLoop.
+  - Added `attach_mode` (`live|managed|observe_only|replay`) and derived `controllable` property on `SessionBridge`.
+  - Added bridge event listeners (`add_event_listener` / `remove_event_listener`) and fan-out so bridge events can tee to multiple consumers.
+  - Extended state/session payloads to include `attach_mode` and `controllable`.
+  - Updated `SessionManager.attach()` mode selection: discovered sessions default to `observe_only`; unmanaged new sessions default to `managed`.
+- Added `vibecheck/tui_bridge.py` with `TuiBridge` adapter (`on_bridge_event`) to forward bridge events to Textual-style `handle_event(...)`.
+- Added `vibecheck/launcher.py` and `VibeCheckApp`:
+  - Launcher parses `--ws-port`, builds AgentLoop from Vibe runtime, attaches bridge in `live` mode, and runs TUI app.
+  - `VibeCheckApp` starts uvicorn server worker with `log_level=\"warning\"` and routes TUI turn handling through `bridge.inject_message()` so bridge remains sole `act()` consumer.
+- Registered CLI entrypoint in `pyproject.toml`:
+  - `[project.scripts] vibecheck-vibe = "vibecheck.launcher:launch"`.
+- Added Phase 3 tests:
+  - `vibecheck/tests/test_tui_bridge.py`
+  - `vibecheck/tests/test_launcher.py`
+  - `vibecheck/tests/test_live_attach.py`
+  - Expanded `vibecheck/tests/test_bridge.py` for live attach behavior and attach-mode semantics.
+- Added `scripts/test_live_attach.sh` smoke/integration script.
+- Verification run:
+  - `uv run pytest vibecheck/tests/test_bridge.py vibecheck/tests/test_tui_bridge.py vibecheck/tests/test_launcher.py vibecheck/tests/test_live_attach.py -v` -> passed.
+  - `uv run pytest vibecheck/tests/ -v` -> 54 passed.
+  - `scripts/test_live_attach.sh` -> passed.
+  - `uv run python -m vibecheck` startup smoke + `curl /api/health` -> `{\"status\":\"ok\"}`.

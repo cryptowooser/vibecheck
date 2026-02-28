@@ -18,6 +18,9 @@ dependencies = [
   "websockets>=15.0.1",
 ]
 
+[project.scripts]
+vibecheck-vibe = "vibecheck.launcher:launch"
+
 [dependency-groups]
 dev = [
   "pytest>=8.4.2",

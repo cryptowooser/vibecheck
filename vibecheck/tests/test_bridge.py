@@ -390,3 +390,81 @@ async def test_invalid_edited_args_deny_execution_and_do_not_mutate_tool_args(
     assert not any('"command":' in event["output"] for event in tool_results)
 
     bridge.stop()
+
+
+def test_attach_to_loop_sets_live_mode_and_wires_callbacks() -> None:
+    import vibecheck.bridge as bridge_module
+
+    runtime = bridge_module.VibeRuntime(
+        agent_loop_cls=FakeAgentLoop,
+        vibe_config_cls=FakeVibeConfig,
+        approval_yes=FakeApprovalResponse.YES,
+        approval_no=FakeApprovalResponse.NO,
+        ask_result_cls=FakeAskUserQuestionResult,
+        answer_cls=FakeAnswer,
+    )
+    fake_loop = FakeAgentLoop(FakeVibeConfig.load())
+    bridge = SessionBridge("live-1")
+
+    bridge.attach_to_loop(fake_loop, runtime)
+
+    assert bridge.attach_mode == "live"
+    assert bridge.controllable is True
+    assert fake_loop.approval_callback is not None
+    assert fake_loop.user_input_callback is not None
+    assert callable(fake_loop.message_observer)
+    assert bridge.state_payload()["attach_mode"] == "live"
+    assert bridge.state_payload()["controllable"] is True
+
+
+def test_session_manager_attaches_discovered_sessions_as_observe_only(tmp_path: Path) -> None:
+    logs_root = tmp_path / "logs" / "session"
+    session_dir = logs_root / "session_a"
+    session_dir.mkdir(parents=True)
+    (session_dir / "meta.json").write_text(
+        json.dumps({"session_id": "session-a", "start_time": "2026-02-28T00:00:00Z"}),
+        encoding="utf-8",
+    )
+
+    manager = SessionManager(logs_root=logs_root)
+    observed = manager.attach("session-a")
+    managed = manager.attach("new-session")
+
+    assert observed.attach_mode == "observe_only"
+    assert observed.controllable is False
+    assert managed.attach_mode == "managed"
+    assert managed.controllable is True
+
+
+@pytest.mark.asyncio
+async def test_attach_to_loop_uses_existing_loop_for_message_injection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import vibecheck.bridge as bridge_module
+
+    runtime = bridge_module.VibeRuntime(
+        agent_loop_cls=FakeAgentLoop,
+        vibe_config_cls=FakeVibeConfig,
+        approval_yes=FakeApprovalResponse.YES,
+        approval_no=FakeApprovalResponse.NO,
+        ask_result_cls=FakeAskUserQuestionResult,
+        answer_cls=FakeAnswer,
+    )
+
+    manager = RecordingConnectionManager()
+    bridge = SessionBridge("live-2", connection_manager=manager)
+    fake_loop = FakeAgentLoop(FakeVibeConfig.load())
+    bridge.attach_to_loop(fake_loop, runtime)
+
+    assert bridge.inject_message("from-live")
+    await _wait_until(lambda: "tc-1" in bridge.pending_approval)
+    assert bridge.resolve_approval("tc-1", approved=True)
+    await _wait_until(lambda: len(bridge.pending_input) == 1)
+    request_id = next(iter(bridge.pending_input.keys()))
+    assert bridge.resolve_input(request_id=request_id, response="yes")
+    await _wait_until(lambda: bridge.state == "idle")
+
+    event_types = [event["type"] for _, event in manager.events]
+    assert "tool_call" in event_types
+    assert "tool_result" in event_types
+    assert "assistant" in event_types
