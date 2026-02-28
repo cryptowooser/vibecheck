@@ -29,7 +29,8 @@ Options:
   --psk VALUE           PSK value for X-PSK
   --sid SESSION_ID      Session ID to validate
   --run-dir PATH        Output directory for artifacts
-  --save-env            Save entered BASE_URL/PSK/SID to scripts/manual-test/.env.local
+  --save-env            Save entered BASE_URL/PSK (and SID only with --save-sid) to scripts/manual-test/.env.local
+  --save-sid            Persist SID when used with --save-env
   --help, -h            Show help
 
 Default behavior:
@@ -54,6 +55,8 @@ if [[ -f "$ENV_FILE" ]]; then
 fi
 
 save_env=false
+save_sid=false
+sid_explicit=false
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -67,6 +70,7 @@ while [[ $# -gt 0 ]]; do
       ;;
     --sid)
       SID="${2:-}"
+      sid_explicit=true
       shift 2
       ;;
     --run-dir)
@@ -77,6 +81,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --save-env)
       save_env=true
+      shift
+      ;;
+    --save-sid)
+      save_sid=true
       shift
       ;;
     --help|-h)
@@ -166,10 +174,21 @@ check_health() {
 
 discover_sid() {
   local discovered
-  discovered="$(BASE_URL="$BASE_URL" PSK="$PSK" "$API_SH" live-session-id || true)"
+  discovered="$(BASE_URL="$BASE_URL" PSK="$PSK" "$API_SH" selected-sid 2>/dev/null || true)"
   if [[ -n "$discovered" ]]; then
     SID="$discovered"
   fi
+}
+
+is_sid_live_controllable() {
+  local sid="$1"
+  local payload
+  payload="$(BASE_URL="$BASE_URL" PSK="$PSK" SID="$sid" "$API_SH" state 2>/dev/null || true)"
+  if [[ -z "$payload" ]]; then
+    return 1
+  fi
+  [[ "$(jq -r '.attach_mode // empty' <<<"$payload")" == "live" ]] && \
+    [[ "$(jq -r '.controllable // false' <<<"$payload")" == "true" ]]
 }
 
 scenario_remote_approve() {
@@ -492,20 +511,44 @@ mkdir -p "$RUN_DIR"
 prompt_if_empty BASE_URL "Base URL (e.g. https://vibecheck.example.com): "
 prompt_if_empty PSK "PSK (hidden input): " true
 
+sid_live=false
 if [[ -z "$SID" ]]; then
   echo "Discovering live session ID..."
   discover_sid
+else
+  if ! is_sid_live_controllable "$SID"; then
+    if [[ "$sid_explicit" == "true" ]]; then
+      echo "Provided --sid is not currently live/controllable: $SID" >&2
+    else
+      echo "Saved SID is stale/non-live: $SID"
+      echo "Discovering active live session ID..."
+      discover_sid
+    fi
+  fi
 fi
-if [[ -z "$SID" ]]; then
-  prompt_if_empty SID "Session ID (SID): "
+
+if [[ -n "$SID" ]] && is_sid_live_controllable "$SID"; then
+  sid_live=true
+fi
+
+if [[ -z "$SID" || "$sid_live" != "true" ]]; then
+  echo "Could not auto-select a live controllable session."
+  BASE_URL="$BASE_URL" PSK="$PSK" "$API_SH" sessions || true
+  prompt_if_empty SID "Session ID (SID) to test: "
+  if ! is_sid_live_controllable "$SID"; then
+    echo "Selected SID is not live/controllable: $SID" >&2
+    exit 1
+  fi
 fi
 
 if [[ "$save_env" == "true" ]]; then
-  cat >"$ENV_FILE" <<EOF
-BASE_URL=$BASE_URL
-PSK=$PSK
-SID=$SID
-EOF
+  {
+    echo "BASE_URL=$BASE_URL"
+    echo "PSK=$PSK"
+    if [[ "$save_sid" == "true" ]]; then
+      echo "SID=$SID"
+    fi
+  } >"$ENV_FILE"
   chmod 600 "$ENV_FILE"
   echo "Saved defaults to $ENV_FILE"
 fi
@@ -515,6 +558,10 @@ echo "== Preflight =="
 echo "Base URL: $BASE_URL"
 echo "Session:  $SID"
 echo "Run dir:  $RUN_DIR"
+echo
+echo "Phone session target: $SID"
+echo "If your phone UI has a session switcher, select this exact session ID."
+echo "If your phone UI has no switcher, refresh it now and verify pending prompts appear during Scenario 1."
 
 if ! check_health; then
   echo "Health check failed at $BASE_URL/api/health" >&2

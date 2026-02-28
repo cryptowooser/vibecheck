@@ -38,11 +38,12 @@ You can persist local defaults (ignored by git):
 cat > scripts/manual-test/.env.local <<'EOF'
 BASE_URL=https://<your-domain>
 PSK=<your-psk>
-SID=<optional-live-session-id>
 EOF
 ```
 
 `run.sh` loads this automatically if present.
+`SID` is intentionally optional. `run.sh` and `api.sh` auto-select the current live controllable
+session on each run when `SID` is unset or stale.
 
 ## Output Artifacts
 

@@ -67,7 +67,24 @@ echo "Transcript: $transcript_file"
 echo
 echo "Phone UI URL: $BASE_URL"
 echo
+echo "Then in Terminal B run:"
+echo "  scripts/manual-test/run.sh --base-url $BASE_URL"
+echo "  # SID auto-selects; no manual SID needed"
+echo
 echo "Stop with Ctrl+C when done."
 
 cd "$ROOT_DIR"
+
+if ! uv run python - <<'PY' >/dev/null 2>&1
+from vibecheck.bridge import load_vibe_runtime
+load_vibe_runtime()
+PY
+then
+  echo
+  echo "Vibe runtime preflight failed."
+  echo "Install runtime deps once, then retry:"
+  echo "  uv pip install -e reference/mistral-vibe"
+  exit 1
+fi
+
 script -q -f "$transcript_file" -c "uv run vibecheck-vibe --ws-port $WS_PORT"

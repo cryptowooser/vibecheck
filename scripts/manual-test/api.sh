@@ -11,6 +11,7 @@ fi
 BASE_URL="${BASE_URL:-}"
 PSK="${PSK:-}"
 SID="${SID:-${SESSION_ID:-}}"
+_SID_AUTO_SELECTED=0
 
 usage() {
   cat <<'EOF'
@@ -24,6 +25,7 @@ Environment:
 Commands:
   sessions
   live-session-id
+  selected-sid
   state
   detail
   call-id
@@ -59,8 +61,24 @@ require_auth() {
 }
 
 require_sid() {
+  require_auth
   if [[ -z "$SID" ]]; then
-    echo "SID is required for this command" >&2
+    SID="$(discover_live_sid)"
+    _SID_AUTO_SELECTED=1
+  fi
+
+  if [[ -z "$SID" ]]; then
+    echo "SID is required for this command (no live/controllable session found)" >&2
+    exit 1
+  fi
+
+  if ! api_get "/api/sessions/$SID/state" >/dev/null 2>&1; then
+    SID="$(discover_live_sid)"
+    _SID_AUTO_SELECTED=1
+  fi
+
+  if [[ -z "$SID" ]]; then
+    echo "Could not resolve a usable SID from /api/sessions" >&2
     exit 1
   fi
 }
@@ -74,6 +92,23 @@ api_post() {
   local path="$1"
   local body="$2"
   curl -fsS -H "X-PSK: $PSK" -H "Content-Type: application/json" -X POST "$BASE_URL$path" -d "$body"
+}
+
+discover_live_sid() {
+  api_get "/api/sessions" | jq -r '
+    [.[] | select(.attach_mode == "live" and .controllable == true and .status != "disconnected")][0].id //
+    [.[] | select(.controllable == true and .status != "disconnected")][0].id //
+    [.[] | select(.attach_mode == "live")][0].id //
+    .[0].id //
+    empty
+  '
+}
+
+announce_selected_sid_once() {
+  if [[ "${_SID_AUTO_SELECTED:-0}" -eq 1 ]]; then
+    echo "Auto-selected SID=$SID" >&2
+    _SID_AUTO_SELECTED=0
+  fi
 }
 
 session_state_json() {
@@ -136,56 +171,57 @@ case "$command" in
     ;;
   live-session-id)
     require_auth
-    api_get "/api/sessions" | jq -r '
-      [.[] | select(.attach_mode == "live")][0].id //
-      [.[] | select(.controllable == true)][0].id //
-      .[0].id //
-      empty
-    '
+    discover_live_sid
     ;;
-  state)
+  selected-sid)
     require_auth
     require_sid
+    announce_selected_sid_once
+    echo "$SID"
+    ;;
+  state)
+    require_sid
+    announce_selected_sid_once
     session_state_json | jq
     ;;
   detail)
-    require_auth
     require_sid
+    announce_selected_sid_once
     api_get "/api/sessions/$SID" | jq
     ;;
   call-id)
-    require_auth
     require_sid
+    announce_selected_sid_once
     session_state_json | jq -r '.pending_approval.call_id // empty'
     ;;
   request-id)
-    require_auth
     require_sid
+    announce_selected_sid_once
     session_state_json | jq -r '.pending_input.request_id // empty'
     ;;
   wait-pending-approval)
-    require_auth
     require_sid
+    announce_selected_sid_once
     wait_until_expr_nonempty '.pending_approval.call_id // empty' "${1:-120}"
     ;;
   wait-pending-input)
-    require_auth
     require_sid
+    announce_selected_sid_once
     wait_until_expr_nonempty '.pending_input.request_id // empty' "${1:-120}"
     ;;
   wait-clear-approval)
-    require_auth
     require_sid
+    announce_selected_sid_once
     wait_until_expr_empty '.pending_approval.call_id // empty' "${1:-120}"
     ;;
   wait-clear-input)
-    require_auth
     require_sid
+    announce_selected_sid_once
     wait_until_expr_empty '.pending_input.request_id // empty' "${1:-120}"
     ;;
   wait-state)
-    require_auth
     require_sid
+    announce_selected_sid_once
     target_state="${1:-}"
     timeout="${2:-120}"
     if [[ -z "$target_state" ]]; then
@@ -195,8 +231,8 @@ case "$command" in
     wait_until_expr_nonempty ".state | select(. == \"$target_state\")" "$timeout" >/dev/null
     ;;
   message)
-    require_auth
     require_sid
+    announce_selected_sid_once
     content="${1:-}"
     if [[ -z "$content" ]]; then
       echo "message requires text content" >&2
@@ -205,8 +241,8 @@ case "$command" in
     api_post "/api/sessions/$SID/message" "$(jq -nc --arg c "$content" '{content:$c}')" | jq
     ;;
   approve)
-    require_auth
     require_sid
+    announce_selected_sid_once
     call_id="${1:-}"
     if [[ -z "$call_id" ]]; then
       echo "approve requires <call_id>" >&2
@@ -215,8 +251,8 @@ case "$command" in
     api_post "/api/sessions/$SID/approve" "$(jq -nc --arg id "$call_id" '{call_id:$id, approved:true}')" | jq
     ;;
   reject)
-    require_auth
     require_sid
+    announce_selected_sid_once
     call_id="${1:-}"
     if [[ -z "$call_id" ]]; then
       echo "reject requires <call_id>" >&2
@@ -225,8 +261,8 @@ case "$command" in
     api_post "/api/sessions/$SID/approve" "$(jq -nc --arg id "$call_id" '{call_id:$id, approved:false}')" | jq
     ;;
   answer)
-    require_auth
     require_sid
+    announce_selected_sid_once
     request_id="${1:-}"
     response="${2:-}"
     if [[ -z "$request_id" || -z "$response" ]]; then

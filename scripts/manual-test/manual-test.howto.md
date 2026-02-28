@@ -61,6 +61,8 @@ scripts/manual-test/run.sh --base-url https://<your-domain> --save-env
 ```
 
 `run.sh` walks through all scenarios, checks API state transitions, and records pass/fail.
+By default, `--save-env` stores only `BASE_URL` and `PSK`; it does not pin `SID`, so restarts
+auto-select the current live session.
 
 ## Scenarios Covered by `run.sh`
 
@@ -107,8 +109,8 @@ Use `VIBE_ACTIVE_MODEL=devstral-2` when launching `capture.sh`, or change `~/.vi
 
 ```bash
 scripts/manual-test/api.sh sessions
+scripts/manual-test/api.sh selected-sid
 scripts/manual-test/api.sh state
 ```
 
 - Verify `attach_mode` is `live` and `controllable` is `true`.
-
