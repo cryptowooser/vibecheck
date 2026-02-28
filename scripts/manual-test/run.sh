@@ -157,8 +157,21 @@ ask_yes_no() {
 
 wait_for_enter() {
   local message="$1"
+  local response
   echo
-  read -r -p "$message (press Enter when done) " _
+  read -r -p "$message (Enter=continue, q=abort) " response
+  case "$response" in
+    q|Q|quit|QUIT|exit|EXIT)
+      echo
+      echo "Manual run aborted by operator."
+      append_result "RUN_ABORTED" "ABORT" "operator_exit"
+      build_report || true
+      echo "Partial report: $REPORT_MD"
+      exit 130
+      ;;
+    *)
+      ;;
+  esac
 }
 
 append_result() {
@@ -558,10 +571,14 @@ echo "== Preflight =="
 echo "Base URL: $BASE_URL"
 echo "Session:  $SID"
 echo "Run dir:  $RUN_DIR"
+echo "Phone debug URL: ${BASE_URL%/}/?debug=1&sid=$SID"
 echo
 echo "Phone session target: $SID"
 echo "If your phone UI has a session switcher, select this exact session ID."
 echo "If your phone UI has no switcher, refresh it now and verify pending prompts appear during Scenario 1."
+echo
+echo "Session snapshot:"
+BASE_URL="$BASE_URL" PSK="$PSK" "$API_SH" sessions | jq -r '.[] | "- id=\(.id) mode=\(.attach_mode // "unknown") controllable=\(.controllable // false) status=\(.status // "unknown")"' || true
 
 if ! check_health; then
   echo "Health check failed at $BASE_URL/api/health" >&2
@@ -575,6 +592,15 @@ if ! api state >/dev/null 2>&1; then
   exit 1
 fi
 echo "Session state lookup: ok"
+
+echo "WebSocket probe (session-scoped):"
+if ! ws_probe_json="$(api ws-check 8 2>&1)"; then
+  echo "WebSocket probe failed for SID=$SID." >&2
+  echo "$ws_probe_json" >&2
+  echo "Check Caddy WS proxy + SID alignment, then retry." >&2
+  exit 1
+fi
+echo "$ws_probe_json" | jq -r '"WS ok: sid=\(.session_id) state=\(.state) mode=\(.attach_mode // "unknown") controllable=\(.controllable // false)"'
 
 wait_for_enter "Confirm TUI is running in Terminal A and phone PWA is connected"
 

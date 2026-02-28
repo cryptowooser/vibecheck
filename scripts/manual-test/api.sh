@@ -26,6 +26,7 @@ Commands:
   sessions
   live-session-id
   selected-sid
+  ws-check [timeout_seconds]
   state
   detail
   call-id
@@ -156,6 +157,7 @@ wait_until_expr_empty() {
 
 require_cmd jq
 require_cmd curl
+require_cmd uv
 
 command="${1:-}"
 if [[ -z "$command" || "$command" == "--help" || "$command" == "-h" ]]; then
@@ -178,6 +180,82 @@ case "$command" in
     require_sid
     announce_selected_sid_once
     echo "$SID"
+    ;;
+  ws-check)
+    require_sid
+    announce_selected_sid_once
+    timeout="${1:-8}"
+    BASE_URL="$BASE_URL" SID="$SID" PSK="$PSK" WS_TIMEOUT="$timeout" uv run python - <<'PY'
+import asyncio
+import json
+import os
+import sys
+from urllib.parse import quote, urlparse, urlunparse
+
+try:
+    import websockets
+except Exception as exc:  # pragma: no cover - runtime env check
+    print(
+        "websocket probe requires python package 'websockets'; install via: uv pip install websockets",
+        file=sys.stderr,
+    )
+    raise SystemExit(2) from exc
+
+
+def build_ws_url(base_url: str, session_id: str, psk: str) -> str:
+    parsed = urlparse(base_url if "://" in base_url else f"https://{base_url}")
+    scheme = "wss" if parsed.scheme == "https" else "ws"
+    netloc = parsed.netloc or parsed.path
+    base_path = parsed.path if parsed.netloc else ""
+    path = f"{base_path.rstrip('/')}/ws/events/{quote(session_id, safe='')}"
+    query = f"psk={quote(psk, safe='')}"
+    return urlunparse((scheme, netloc, path, "", query, ""))
+
+
+async def probe(url: str, timeout: float) -> dict:
+    async with websockets.connect(
+        url,
+        open_timeout=timeout,
+        close_timeout=1,
+        ping_interval=None,
+    ) as ws:
+        first_raw = await asyncio.wait_for(ws.recv(), timeout=timeout)
+        second_raw = await asyncio.wait_for(ws.recv(), timeout=timeout)
+
+    first = json.loads(first_raw)
+    second = json.loads(second_raw)
+    if first.get("type") != "connected":
+        raise RuntimeError(f"expected first websocket event=connected, got={first.get('type')}")
+    if second.get("type") != "state":
+        raise RuntimeError(f"expected second websocket event=state, got={second.get('type')}")
+
+    return {
+        "ok": True,
+        "ws_url": url,
+        "session_id": first.get("session_id"),
+        "state": second.get("state"),
+        "attach_mode": second.get("attach_mode"),
+        "controllable": second.get("controllable"),
+    }
+
+
+def main() -> int:
+    base_url = os.environ["BASE_URL"]
+    sid = os.environ["SID"]
+    psk = os.environ["PSK"]
+    timeout = float(os.environ.get("WS_TIMEOUT", "8"))
+    ws_url = build_ws_url(base_url, sid, psk)
+    try:
+        result = asyncio.run(probe(ws_url, timeout))
+    except Exception as exc:  # pragma: no cover - runtime env check
+        print(f"websocket probe failed: {exc}", file=sys.stderr)
+        return 1
+    print(json.dumps(result, ensure_ascii=True))
+    return 0
+
+
+raise SystemExit(main())
+PY
     ;;
   state)
     require_sid

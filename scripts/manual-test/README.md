@@ -10,6 +10,7 @@ For the full operator runbook (prereqs, exact commands, troubleshooting), see:
 - `capture.sh`: Starts `vibecheck-vibe` with terminal transcript capture (`script`).
 - `run.sh`: Interactive checklist runner for WU-34 scenarios with pass/fail capture.
 - `api.sh`: Session API helper commands (`state`, `wait-pending-approval`, `approve`, etc.).
+  - Includes `ws-check` to validate live session WebSocket delivery before running scenarios.
 - `tui_prompts.sh`: Canonical prompt text to paste into the TUI for each scenario.
 
 ## Recommended Terminal Layout

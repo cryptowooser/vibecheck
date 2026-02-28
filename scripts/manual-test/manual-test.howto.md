@@ -111,6 +111,7 @@ Use `VIBE_ACTIVE_MODEL=devstral-2` when launching `capture.sh`, or change `~/.vi
 scripts/manual-test/api.sh sessions
 scripts/manual-test/api.sh selected-sid
 scripts/manual-test/api.sh state
+scripts/manual-test/api.sh ws-check
 ```
 
 - Verify `attach_mode` is `live` and `controllable` is `true`.

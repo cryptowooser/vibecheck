@@ -70,6 +70,10 @@ echo
 echo "Then in Terminal B run:"
 echo "  scripts/manual-test/run.sh --base-url $BASE_URL"
 echo "  # SID auto-selects; no manual SID needed"
+echo "  # Use Phone debug URL printed by run.sh to confirm session binding"
+echo
+echo "Session verification helper (Terminal B):"
+echo "  scripts/manual-test/api.sh selected-sid"
 echo
 echo "Stop with Ctrl+C when done."
 
