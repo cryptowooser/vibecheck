@@ -6,7 +6,7 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from server.app import UpstreamAPIError, app, open_tts_stream, transcribe_audio
+from server.app import UpstreamAPIError, app, describe_image, open_tts_stream, transcribe_audio
 
 
 class FakeClient:
@@ -253,6 +253,160 @@ def test_tts_empty_upstream_audio_returns_502(client: TestClient, monkeypatch: p
     assert response.status_code == 502
 
 
+def test_vision_success_returns_contract(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv('MISTRAL_API_KEY', 'test-key')
+
+    async def fake_describe_image(**kwargs: object) -> str:
+        assert kwargs['api_key'] == 'test-key'
+        assert kwargs['image_bytes'] == b'image-bytes'
+        assert kwargs['mime_type'] == 'image/jpeg'
+        return 'A photo of a city skyline at dusk.'
+
+    monkeypatch.setattr('server.app.describe_image', fake_describe_image)
+
+    response = client.post(
+        '/api/vision',
+        files={'image': ('photo.jpg', b'image-bytes', 'image/jpeg')},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        'text': 'A photo of a city skyline at dusk.',
+        'prompt': 'Describe this image',
+        'model': 'mistral-large-latest',
+    }
+
+
+def test_vision_missing_image_returns_400(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv('MISTRAL_API_KEY', 'test-key')
+
+    response = client.post('/api/vision')
+
+    assert response.status_code == 400
+    assert 'detail' in response.json()
+
+
+def test_vision_unsupported_mime_returns_415(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv('MISTRAL_API_KEY', 'test-key')
+
+    async def fail_if_called(**_: object) -> str:
+        raise AssertionError('describe_image should not be called for unsupported MIME types')
+
+    monkeypatch.setattr('server.app.describe_image', fail_if_called)
+
+    response = client.post(
+        '/api/vision',
+        files={'image': ('photo.gif', b'GIF89a', 'image/gif')},
+    )
+
+    assert response.status_code == 415
+    payload = response.json()
+    assert 'detail' in payload
+    assert 'unsupported' in payload['detail'].lower()
+
+
+def test_vision_oversized_payload_returns_413(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv('MISTRAL_API_KEY', 'test-key')
+    monkeypatch.setenv('VISION_MAX_UPLOAD_BYTES', '8')
+
+    async def fail_if_called(**_: object) -> str:
+        raise AssertionError('describe_image should not be called for oversized images')
+
+    monkeypatch.setattr('server.app.describe_image', fail_if_called)
+
+    response = client.post(
+        '/api/vision',
+        files={'image': ('photo.png', b'123456789', 'image/png')},
+    )
+
+    assert response.status_code == 413
+    payload = response.json()
+    assert 'detail' in payload
+    assert 'too large' in payload['detail'].lower()
+
+
+def test_vision_missing_api_key_returns_500(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv('MISTRAL_API_KEY', raising=False)
+
+    response = client.post(
+        '/api/vision',
+        files={'image': ('photo.jpg', b'image-bytes', 'image/jpeg')},
+    )
+
+    assert response.status_code == 500
+    payload = response.json()
+    assert 'detail' in payload
+    assert 'MISTRAL_API_KEY' in payload['detail']
+
+
+def test_vision_maps_rate_limit_to_429(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv('MISTRAL_API_KEY', 'test-key')
+
+    async def fake_describe_image(**_: object) -> str:
+        raise UpstreamAPIError(status_code=429, detail='rate limited')
+
+    monkeypatch.setattr('server.app.describe_image', fake_describe_image)
+
+    response = client.post(
+        '/api/vision',
+        files={'image': ('photo.jpg', b'image-bytes', 'image/jpeg')},
+    )
+
+    assert response.status_code == 429
+    assert 'detail' in response.json()
+
+
+def test_vision_maps_upstream_auth_failure_to_502(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv('MISTRAL_API_KEY', 'test-key')
+
+    async def fake_describe_image(**_: object) -> str:
+        raise UpstreamAPIError(status_code=401, detail='invalid key')
+
+    monkeypatch.setattr('server.app.describe_image', fake_describe_image)
+
+    response = client.post(
+        '/api/vision',
+        files={'image': ('photo.jpg', b'image-bytes', 'image/jpeg')},
+    )
+
+    assert response.status_code == 502
+    assert 'detail' in response.json()
+
+
+def test_vision_maps_transport_failure_to_502(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv('MISTRAL_API_KEY', 'test-key')
+
+    async def fake_describe_image(**_: object) -> str:
+        raise UpstreamAPIError(status_code=502, detail='transport error')
+
+    monkeypatch.setattr('server.app.describe_image', fake_describe_image)
+
+    response = client.post(
+        '/api/vision',
+        files={'image': ('photo.jpg', b'image-bytes', 'image/jpeg')},
+    )
+
+    assert response.status_code == 502
+    assert 'detail' in response.json()
+
+
+def test_vision_maps_empty_upstream_content_to_502(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv('MISTRAL_API_KEY', 'test-key')
+
+    async def fake_describe_image(**_: object) -> str:
+        raise UpstreamAPIError(status_code=502, detail='Vision upstream returned empty content')
+
+    monkeypatch.setattr('server.app.describe_image', fake_describe_image)
+
+    response = client.post(
+        '/api/vision',
+        files={'image': ('photo.jpg', b'image-bytes', 'image/jpeg')},
+    )
+
+    assert response.status_code == 502
+    assert 'detail' in response.json()
+
+
 def test_tts_midstream_failure_aborts_response(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv('ELEVENLABS_API_KEY', 'test-key')
 
@@ -368,3 +522,87 @@ async def test_open_tts_stream_transport_error_maps_to_upstream_error(monkeypatc
 
     assert exc.value.status_code == 502
     assert 'transport error' in exc.value.detail.lower()
+
+
+@pytest.mark.anyio
+async def test_describe_image_normalizes_structured_content(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, object] = {}
+
+    class VisionResponse:
+        status_code = 200
+        text = ''
+
+        def json(self) -> dict[str, object]:
+            return {
+                'choices': [
+                    {
+                        'message': {
+                            'content': [
+                                {'type': 'text', 'text': 'A wooden table'},
+                                {'type': 'text', 'text': 'with a laptop and coffee mug.'},
+                            ]
+                        }
+                    }
+                ]
+            }
+
+    class VisionClient:
+        def __init__(self, *_: object, **kwargs: object) -> None:
+            captured['timeout'] = kwargs.get('timeout')
+
+        async def __aenter__(self) -> VisionClient:
+            return self
+
+        async def __aexit__(self, *_: object) -> None:
+            return
+
+        async def post(self, url: str, *, headers: dict[str, str], json: dict[str, object]) -> VisionResponse:
+            captured['url'] = url
+            captured['headers'] = headers
+            captured['payload'] = json
+            return VisionResponse()
+
+    monkeypatch.setattr('server.app.httpx.AsyncClient', VisionClient)
+
+    text = await describe_image(api_key='test-key', image_bytes=b'\x89PNG', mime_type='image/png')
+
+    assert text == 'A wooden table with a laptop and coffee mug.'
+    assert captured['timeout'] == 60.0
+    assert captured['url'] == 'https://api.mistral.ai/v1/chat/completions'
+
+    payload = captured['payload']
+    assert isinstance(payload, dict)
+    assert payload['model'] == 'mistral-large-latest'
+    assert payload['messages'][0]['content'][0]['image_url'] == 'data:image/png;base64,iVBORw=='
+    assert payload['messages'][0]['content'][1] == {'type': 'text', 'text': 'Describe this image'}
+
+
+@pytest.mark.anyio
+async def test_describe_image_empty_content_raises_upstream_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    class EmptyVisionResponse:
+        status_code = 200
+        text = ''
+
+        def json(self) -> dict[str, object]:
+            return {'choices': [{'message': {'content': []}}]}
+
+    class EmptyVisionClient:
+        def __init__(self, *_: object, **__: object) -> None:
+            return
+
+        async def __aenter__(self) -> EmptyVisionClient:
+            return self
+
+        async def __aexit__(self, *_: object) -> None:
+            return
+
+        async def post(self, *_: object, **__: object) -> EmptyVisionResponse:
+            return EmptyVisionResponse()
+
+    monkeypatch.setattr('server.app.httpx.AsyncClient', EmptyVisionClient)
+
+    with pytest.raises(UpstreamAPIError) as exc:
+        await describe_image(api_key='test-key', image_bytes=b'image', mime_type='image/jpeg')
+
+    assert exc.value.status_code == 502
+    assert 'empty' in exc.value.detail.lower()
