@@ -22,7 +22,7 @@ print_prompt() {
     approve)
       cat <<'EOF'
 Run exactly this in the TUI:
-Create a tiny file at /tmp/wu34-approve.txt containing "ok", then read it back with read_file.
+Create or overwrite /tmp/wu34-approve.txt with "ok" (set overwrite=true if write_file requests it), then read it back with read_file.
 If any tool approval appears, wait for phone approval.
 EOF
       ;;
