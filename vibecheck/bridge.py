@@ -312,10 +312,27 @@ class SessionBridge:
             )
         )
 
-    async def request_approval(self, call_id: str, tool_name: str, args: dict) -> dict:
+    async def request_approval(
+        self,
+        call_id: str,
+        tool_name: str,
+        args: dict,
+        *,
+        local_args: object | None = None,
+    ) -> dict:
         future: asyncio.Future = asyncio.get_running_loop().create_future()
         self.pending_approval[call_id] = future
         self.pending_approval_context[call_id] = {"tool_name": tool_name, "args": args}
+        if self._local_approval_callback is not None:
+            self._track_task(
+                asyncio.create_task(
+                    self._resolve_with_local_approval(
+                        tool_name=tool_name,
+                        args=local_args if local_args is not None else args,
+                        tool_call_id=call_id,
+                    )
+                )
+            )
         self._set_state("waiting_approval")
         await self._broadcast(ApprovalRequestEvent(call_id=call_id, tool_name=tool_name, args=args))
         result = await future
@@ -335,13 +352,29 @@ class SessionBridge:
         )
         return True
 
-    async def request_input(self, request_id: str, question: str, options: list[str] | None = None) -> str:
+    async def request_input(
+        self,
+        request_id: str,
+        question: str,
+        options: list[str] | None = None,
+        *,
+        local_args: object | None = None,
+    ) -> str:
         future: asyncio.Future = asyncio.get_running_loop().create_future()
         self.pending_input[request_id] = future
         self.pending_input_context[request_id] = {
             "question": question,
             "options": list(options or []),
         }
+        if self._local_input_callback is not None:
+            self._track_task(
+                asyncio.create_task(
+                    self._resolve_with_local_input(
+                        local_args if local_args is not None else dict(self.pending_input_context[request_id]),
+                        request_id,
+                    )
+                )
+            )
         self._set_state("waiting_input")
         await self._broadcast(
             InputRequestEvent(request_id=request_id, question=question, options=options or [])
@@ -453,17 +486,11 @@ class SessionBridge:
     async def _approval_callback(
         self, tool_name: str, args: object, tool_call_id: str
     ) -> tuple[object, str | None]:
-        if self._local_approval_callback is not None:
-            self._track_task(
-                asyncio.create_task(
-                    self._resolve_with_local_approval(tool_name, args, tool_call_id)
-                )
-            )
-
         approval = await self.request_approval(
             call_id=tool_call_id,
             tool_name=tool_name,
             args=self._message_to_dict(args),
+            local_args=args,
         )
 
         runtime = self._vibe_runtime
@@ -483,10 +510,13 @@ class SessionBridge:
     async def _user_input_callback(self, args: object) -> object:
         question, options, prompts = self._extract_input_question(args)
         request_id = f"req-{uuid4().hex[:8]}"
-        if self._local_input_callback is not None:
-            self._track_task(asyncio.create_task(self._resolve_with_local_input(args, request_id)))
 
-        response = await self.request_input(request_id=request_id, question=question, options=options)
+        response = await self.request_input(
+            request_id=request_id,
+            question=question,
+            options=options,
+            local_args=args,
+        )
 
         return self._build_input_result(response, prompts)
 
