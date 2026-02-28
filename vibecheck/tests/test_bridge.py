@@ -281,3 +281,39 @@ async def test_start_session_wires_agent_loop_callbacks_and_processes_events(
     )
 
     bridge.stop()
+
+
+@pytest.mark.asyncio
+async def test_inject_message_lazily_starts_agent_loop_when_runtime_is_available(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import vibecheck.bridge as bridge_module
+
+    runtime = bridge_module.VibeRuntime(
+        agent_loop_cls=FakeAgentLoop,
+        vibe_config_cls=FakeVibeConfig,
+        approval_yes=FakeApprovalResponse.YES,
+        approval_no=FakeApprovalResponse.NO,
+        ask_result_cls=FakeAskUserQuestionResult,
+        answer_cls=FakeAnswer,
+    )
+    monkeypatch.setattr(bridge_module, "load_vibe_runtime", lambda: runtime)
+
+    manager = RecordingConnectionManager()
+    bridge = SessionBridge("lazy-live", connection_manager=manager)
+
+    bridge.inject_message("from-api")
+    await _wait_until(lambda: "tc-1" in bridge.pending_approval)
+    assert bridge.resolve_approval("tc-1", approved=True)
+
+    await _wait_until(lambda: len(bridge.pending_input) == 1)
+    request_id = next(iter(bridge.pending_input.keys()))
+    assert bridge.resolve_input(request_id=request_id, response="yes")
+    await _wait_until(lambda: bridge.state == "idle")
+
+    event_types = [event["type"] for _, event in manager.events]
+    assert bridge.messages_to_inject[-1] == "from-api"
+    assert "tool_call" in event_types
+    assert "tool_result" in event_types
+
+    bridge.stop()
