@@ -5,7 +5,7 @@
 Build a minimal, working end-to-end voice loop prototype for mobile browsers:
 
 - Record audio in the browser
-- Send audio to ElevenLabs STT, display transcript
+- Send audio to Voxtral STT (Mistral), display transcript
 - Send transcript to ElevenLabs TTS, play audio back in a selected voice
 - Keep all secrets server-side via a tiny proxy service
 
@@ -26,10 +26,10 @@ Out of scope:
 
 ## Assumptions
 
-- ElevenLabs is the STT and TTS provider for this prototype, overriding the Voxtral STT note in `docs/FRONTEND-PROTOTYPE-PLAN.md`.
-- The backend runs in `frontend-prototype/server` and is the only place that knows `ELEVENLABS_API_KEY`.
+- Voxtral is the STT provider and ElevenLabs is the TTS provider for this prototype.
+- The backend runs in `frontend-prototype/server` and is the only place that knows `MISTRAL_API_KEY` and `ELEVENLABS_API_KEY`.
 - The frontend runs in `frontend-prototype/frontend` and stays intentionally simple.
-- Confirm current ElevenLabs STT/TTS API requirements at implementation time (endpoints, payloads, audio codecs).
+- Confirm current Voxtral STT and ElevenLabs TTS API requirements at implementation time (endpoints, payloads, audio codecs).
 
 ## Milestones
 
@@ -46,7 +46,7 @@ Exit criteria:
 
 **Milestone 1: Backend Proxy Skeleton**
 - Implement `GET /api/voices` returning a small, static list of voices
-- Implement `POST /api/stt` to accept multipart audio upload and return transcript JSON
+- Implement `POST /api/stt` to accept multipart audio upload and return transcript JSON (Voxtral)
 - Implement `POST /api/tts` to accept text + voice_id and return `audio/mpeg`
 - Add request validation, size limits, and clear error mapping
 - Add backend tests with mocked ElevenLabs calls

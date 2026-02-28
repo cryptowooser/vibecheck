@@ -54,4 +54,4 @@
   - Frontend dev probe: `npm run dev` served on `:5173` and responded to `curl`.
 
 ### Frontend prototype planning
-- Added `docs/FRONTEND-PROTOTYPE-IMPLEMENTATION.md` with milestone-based punchlist for the ElevenLabs STT/TTS voice loop prototype
+- Added `docs/FRONTEND-PROTOTYPE-IMPLEMENTATION.md` with milestone-based punchlist for the Voxtral STT + ElevenLabs TTS voice loop prototype
