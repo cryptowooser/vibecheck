@@ -1372,6 +1372,189 @@ describe('App visual milestone 3 end-to-end flow', () => {
     expect(secondImage.type).toBe(firstImage.type)
   })
 
+  it('ignores stale invalid-json failure from an outdated describe request', async () => {
+    const jsonDeferred = createDeferred()
+    fetchMock.mockImplementation(async (resource) => {
+      if (resource === '/api/voices') {
+        return jsonResponse({
+          voices: [{ voice_id: 'voice-one', name: 'Voice One' }],
+        })
+      }
+      if (resource === '/api/vision') {
+        return {
+          ok: true,
+          status: 200,
+          json: () => jsonDeferred.promise,
+        }
+      }
+      return jsonResponse({ detail: 'Not found' }, 404)
+    })
+
+    render(App)
+
+    const uploadInput = screen.getByTestId('upload-photo-input')
+    const firstFile = new File([new Uint8Array([137, 80, 78, 71])], 'first.png', { type: 'image/png' })
+    const secondFile = new File([new Uint8Array([255, 216, 255, 224])], 'second.jpg', { type: 'image/jpeg' })
+
+    await fireEvent.change(uploadInput, {
+      target: { files: [firstFile] },
+    })
+    await fireEvent.click(screen.getByRole('button', { name: 'Describe' }))
+    expect(screen.getByTestId('vision-state-pill')).toHaveTextContent('describing')
+
+    await fireEvent.change(uploadInput, {
+      target: { files: [secondFile] },
+    })
+    expect(screen.getByTestId('vision-state-pill')).toHaveTextContent('image_selected')
+    expect(screen.getByText('second.jpg')).toBeInTheDocument()
+
+    jsonDeferred.reject(new Error('invalid json payload'))
+
+    await waitFor(() => {
+      expect(screen.getByTestId('vision-state-pill')).toHaveTextContent('image_selected')
+    })
+    expect(screen.getByTestId('vision-status-message')).toHaveTextContent('Image selected. Tap Describe.')
+    expect(screen.queryByTestId('vision-error-message')).not.toBeInTheDocument()
+    expect(screen.queryByText('Vision response was invalid.')).not.toBeInTheDocument()
+  })
+
+  it('shows retryable error when vision request cannot reach backend', async () => {
+    fetchMock.mockImplementation(async (resource) => {
+      if (resource === '/api/voices') {
+        return jsonResponse({
+          voices: [{ voice_id: 'voice-one', name: 'Voice One' }],
+        })
+      }
+      if (resource === '/api/vision') {
+        throw new TypeError('network down')
+      }
+      return jsonResponse({ detail: 'Not found' }, 404)
+    })
+
+    render(App)
+
+    const uploadInput = screen.getByTestId('upload-photo-input')
+    const validFile = new File([new Uint8Array([137, 80, 78, 71])], 'offline.png', { type: 'image/png' })
+    await fireEvent.change(uploadInput, {
+      target: { files: [validFile] },
+    })
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Describe' }))
+
+    await waitFor(() => {
+      expect(screen.getByTestId('vision-state-pill')).toHaveTextContent('error')
+    })
+    expect(screen.getByTestId('vision-error-message')).toHaveTextContent('Could not reach vision service.')
+    expect(screen.getByTestId('vision-error-message')).toHaveTextContent('Tap Describe to retry.')
+    expect(screen.getByText('offline.png')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Describe' })).toBeEnabled()
+  })
+
+  it('shows retryable error when vision success response has invalid JSON body', async () => {
+    fetchMock.mockImplementation(async (resource) => {
+      if (resource === '/api/voices') {
+        return jsonResponse({
+          voices: [{ voice_id: 'voice-one', name: 'Voice One' }],
+        })
+      }
+      if (resource === '/api/vision') {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => {
+            throw new Error('invalid json body')
+          },
+        }
+      }
+      return jsonResponse({ detail: 'Not found' }, 404)
+    })
+
+    render(App)
+
+    const uploadInput = screen.getByTestId('upload-photo-input')
+    const validFile = new File([new Uint8Array([137, 80, 78, 71])], 'bad-json.png', { type: 'image/png' })
+    await fireEvent.change(uploadInput, {
+      target: { files: [validFile] },
+    })
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Describe' }))
+
+    await waitFor(() => {
+      expect(screen.getByTestId('vision-state-pill')).toHaveTextContent('error')
+    })
+    expect(screen.getByTestId('vision-error-message')).toHaveTextContent('Vision response was invalid.')
+    expect(screen.getByTestId('vision-error-message')).toHaveTextContent('Tap Describe to retry.')
+  })
+
+  it('shows retryable error when vision response text is empty', async () => {
+    fetchMock.mockImplementation(async (resource) => {
+      if (resource === '/api/voices') {
+        return jsonResponse({
+          voices: [{ voice_id: 'voice-one', name: 'Voice One' }],
+        })
+      }
+      if (resource === '/api/vision') {
+        return jsonResponse({
+          text: '   ',
+          prompt: 'Describe this image',
+          model: 'mistral-large-latest',
+        })
+      }
+      return jsonResponse({ detail: 'Not found' }, 404)
+    })
+
+    render(App)
+
+    const uploadInput = screen.getByTestId('upload-photo-input')
+    const validFile = new File([new Uint8Array([137, 80, 78, 71])], 'empty-text.png', { type: 'image/png' })
+    await fireEvent.change(uploadInput, {
+      target: { files: [validFile] },
+    })
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Describe' }))
+
+    await waitFor(() => {
+      expect(screen.getByTestId('vision-state-pill')).toHaveTextContent('error')
+    })
+    expect(screen.getByTestId('vision-error-message')).toHaveTextContent(
+      'Vision response did not include description text.',
+    )
+    expect(screen.getByTestId('vision-error-message')).toHaveTextContent('Tap Describe to retry.')
+  })
+
+  it('falls back to status-based error detail when vision error body is not JSON', async () => {
+    fetchMock.mockImplementation(async (resource) => {
+      if (resource === '/api/voices') {
+        return jsonResponse({
+          voices: [{ voice_id: 'voice-one', name: 'Voice One' }],
+        })
+      }
+      if (resource === '/api/vision') {
+        return new Response('upstream unavailable', {
+          status: 502,
+          headers: { 'Content-Type': 'text/plain' },
+        })
+      }
+      return jsonResponse({ detail: 'Not found' }, 404)
+    })
+
+    render(App)
+
+    const uploadInput = screen.getByTestId('upload-photo-input')
+    const validFile = new File([new Uint8Array([137, 80, 78, 71])], 'plain-error.png', { type: 'image/png' })
+    await fireEvent.change(uploadInput, {
+      target: { files: [validFile] },
+    })
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Describe' }))
+
+    await waitFor(() => {
+      expect(screen.getByTestId('vision-state-pill')).toHaveTextContent('error')
+    })
+    expect(screen.getByTestId('vision-error-message')).toHaveTextContent('Vision request failed with status 502.')
+    expect(screen.getByTestId('vision-error-message')).toHaveTextContent('Tap Describe to retry.')
+  })
+
   it('keeps prior valid image selected when an invalid replacement is chosen', async () => {
     render(App)
 
@@ -1388,6 +1571,7 @@ describe('App visual milestone 3 end-to-end flow', () => {
 
     expect(screen.getByTestId('vision-state-pill')).toHaveTextContent('error')
     expect(screen.getByTestId('vision-error-message')).toHaveTextContent('Unsupported file type. Use JPEG, PNG, or WEBP.')
+    expect(screen.getByTestId('vision-error-message')).toHaveTextContent('Tap Describe to retry.')
     expect(screen.getByText('sample.png')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Describe' })).toBeEnabled()
   })

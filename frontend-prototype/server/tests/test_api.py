@@ -882,3 +882,27 @@ async def test_describe_image_timeout_raises_upstream_error(monkeypatch: pytest.
 
     assert exc.value.status_code == 502
     assert 'transport error' in exc.value.detail.lower()
+
+
+@pytest.mark.anyio
+async def test_describe_image_connect_error_raises_upstream_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    class ConnectErrorVisionClient:
+        def __init__(self, *_: object, **__: object) -> None:
+            return
+
+        async def __aenter__(self) -> ConnectErrorVisionClient:
+            return self
+
+        async def __aexit__(self, *_: object) -> None:
+            return
+
+        async def post(self, *_: object, **__: object) -> object:
+            raise httpx.ConnectError('network down')
+
+    monkeypatch.setattr('server.app.httpx.AsyncClient', ConnectErrorVisionClient)
+
+    with pytest.raises(UpstreamAPIError) as exc:
+        await describe_image(api_key='test-key', image_bytes=b'image', mime_type='image/jpeg')
+
+    assert exc.value.status_code == 502
+    assert 'transport error' in exc.value.detail.lower()

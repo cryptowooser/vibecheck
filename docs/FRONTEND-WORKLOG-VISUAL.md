@@ -2,6 +2,27 @@
 
 ## 2026-02-28
 
+### Milestone 3 - reviewer remediation follow-up
+- Addressed stale-response and failure-branch gaps in `frontend-prototype/frontend/src/App.svelte`:
+  - added stale guard check in the invalid-JSON response branch before calling `setVisionError(...)`
+  - updated invalid-replacement and preview-failure paths to use retry guidance when a prior valid image is still selected (`Tap Describe to retry.`)
+- Expanded milestone-3 frontend unit coverage in `frontend-prototype/frontend/src/App.test.js`:
+  - stale-response regression: outdated request with delayed invalid-JSON parse cannot overwrite current selection state
+  - transport failure path (`fetch` throw) -> retryable error contract
+  - invalid JSON success-body path -> retryable error contract
+  - empty description-text payload path -> retryable error contract
+  - non-JSON error-body fallback path -> status-based detail message contract
+  - retained-image invalid replacement now asserts retry guidance text
+- Added backend helper-coverage parity test in `frontend-prototype/server/tests/test_api.py`:
+  - `test_describe_image_connect_error_raises_upstream_error`
+- Verification run:
+  - `cd frontend-prototype/frontend && npm test -- src/App.test.js -t "App visual milestone 3 end-to-end flow"` -> passed (`16` tests in scope)
+  - `cd frontend-prototype/frontend && npm test` -> passed (`43` tests)
+  - `cd frontend-prototype/frontend && npm run test:e2e` -> passed (`22` tests)
+  - `cd frontend-prototype/frontend && npm run test:secrets` -> passed
+  - `cd frontend-prototype/frontend && npm run build` -> passed
+  - `cd frontend-prototype/server && uv run pytest tests/test_api.py -v` -> passed (`44` tests)
+
 ### Milestone 3 - end-to-end vision flow wiring
 - Replaced the milestone-2 simulated describe path in `frontend-prototype/frontend/src/App.svelte` with real backend integration:
   - `Describe` now submits multipart `FormData` (`image`) to `POST /api/vision`

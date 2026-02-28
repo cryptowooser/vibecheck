@@ -2,6 +2,26 @@
 
 ## 2026-02-28
 
+### Frontend prototype visual Milestone 3 reviewer-remediation pass
+- Fixed stale-response correctness gap in `frontend-prototype/frontend/src/App.svelte`:
+  - invalid-JSON parse failure branch now re-checks `requestId !== visionSequenceCounter` before setting error UI
+- Fixed retained-selection guidance mismatch in `App.svelte`:
+  - invalid replacement/preview failures now show retry guidance when a prior valid image remains selected (`Tap Describe to retry.`)
+- Expanded frontend Milestone 3 tests in `frontend-prototype/frontend/src/App.test.js` to cover previously untested branches:
+  - stale invalid-JSON response ignored after reselection
+  - fetch transport throw handling
+  - invalid JSON success body handling
+  - empty text payload handling
+  - non-JSON error fallback detail handling
+- Added backend coverage parity test in `frontend-prototype/server/tests/test_api.py`:
+  - `describe_image` `httpx.ConnectError` transport branch now explicitly tested.
+- Verification:
+  - `cd frontend-prototype/frontend && npm test` -> passed (`43` tests)
+  - `cd frontend-prototype/frontend && npm run test:e2e` -> passed (`22` tests)
+  - `cd frontend-prototype/frontend && npm run test:secrets` -> passed
+  - `cd frontend-prototype/frontend && npm run build` -> passed
+  - `cd frontend-prototype/server && uv run pytest tests/test_api.py -v` -> passed (`44` tests)
+
 ### Frontend prototype visual Milestone 3
 - Implemented end-to-end image describe wiring in `frontend-prototype/frontend/src/App.svelte`:
   - `Describe` now posts multipart image data to `POST /api/vision`

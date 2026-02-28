@@ -334,7 +334,7 @@
       if (!hadSelectedImage) {
         resetVisionSelection()
       }
-      setVisionError(validationError)
+      setVisionError(validationError, { allowRetry: hadSelectedImage })
       return
     }
 
@@ -344,7 +344,7 @@
       if (!hadSelectedImage) {
         resetVisionSelection()
       }
-      setVisionError('Could not preview image. Try a different photo.')
+      setVisionError('Could not preview image. Try a different photo.', { allowRetry: hadSelectedImage })
       return
     }
 
@@ -397,6 +397,9 @@
     try {
       payload = await response.json()
     } catch {
+      if (requestId !== visionSequenceCounter) {
+        return
+      }
       setVisionError('Vision response was invalid.', { allowRetry: true })
       return
     }
