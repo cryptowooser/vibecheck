@@ -1,0 +1,10 @@
+# Mistral API SDK
+mistralai
+mistralai[realtime]
+
+# Test audio generation
+gtts
+
+# Audio format conversion (for realtime PCM)
+# Requires ffmpeg installed: sudo pacman -S ffmpeg (Arch/CachyOS)
+pydub
