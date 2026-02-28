@@ -23,6 +23,15 @@ Phone (PWA) → HTTPS/WSS → EC2 (Caddy → FastAPI bridge → Vibe AgentLoop)
 - Mistral SDK (`mistralai`) for Voxtral, Ministral, Small APIs
 - pywebpush for VAPID push notifications
 
+## Environment Variables
+
+These are set globally on the development machine. Do not hardcode, auto-generate, or prompt for them.
+
+| Variable | Purpose |
+|----------|---------|
+| `VIBECHECK_PSK` | Pre-shared key for API auth. Sent as `X-PSK` header. Already set in the environment. |
+| `MISTRAL_API_KEY` | Mistral SDK key. Only needed for live voice/translation (L3+). Mock in tests. |
+
 ## Key Files
 
 | File | Purpose |
@@ -40,6 +49,7 @@ Phone (PWA) → HTTPS/WSS → EC2 (Caddy → FastAPI bridge → Vibe AgentLoop)
 | `vibecheck/tests/` | Backend pytest suite |
 | `prototypes/` | Standalone browser-API test pages |
 | `tests/fixtures/` | Sample event sequences for replay/testing |
+| `reference/mistral-vibe/` | **Vibe source checkout** — read this for AgentLoop, event types, callback signatures |
 
 ---
 
