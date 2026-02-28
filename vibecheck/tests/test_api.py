@@ -129,7 +129,7 @@ async def test_input_pending_and_missing_cases(api_client) -> None:
 
 
 @pytest.mark.asyncio
-async def test_message_and_fleet_state(api_client) -> None:
+async def test_message_returns_503_when_runtime_unavailable(api_client) -> None:
     client, manager = api_client
     bridge = manager.attach("session-a")
 
@@ -138,8 +138,16 @@ async def test_message_and_fleet_state(api_client) -> None:
         headers={"X-PSK": "dev-psk"},
         json={"content": "hello"},
     )
-    assert message_response.status_code == 200
+    assert message_response.status_code == 503
+    assert "runtime unavailable" in message_response.json()["detail"].lower()
     assert bridge.messages_to_inject[-1] == "hello"
+
+
+@pytest.mark.asyncio
+async def test_fleet_state_aggregates(api_client) -> None:
+    client, manager = api_client
+    bridge = manager.attach("session-a")
+    bridge.state = "running"
 
     state_response = await client.get("/api/state", headers={"X-PSK": "dev-psk"})
     assert state_response.status_code == 200

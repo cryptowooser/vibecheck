@@ -65,12 +65,13 @@ class FakeAskUserQuestionResult:
 
 
 class FakeToolResult:
-    def __init__(self, answer: str) -> None:
+    def __init__(self, answer: str, command: str) -> None:
         self.answer = answer
+        self.command = command
 
     def model_dump(self, mode: str = "json") -> dict[str, str]:
         _ = mode
-        return {"answer": self.answer}
+        return {"answer": self.answer, "command": self.command}
 
 
 class FakeObservedMessage:
@@ -145,7 +146,10 @@ class FakeAgentLoop:
 
         response = await self.user_input_callback(FakeAskUserQuestionArgs())
         answer = response.answers[0].answer
-        yield FakeToolResultEvent(tool_call_id="tc-1", result=FakeToolResult(answer=answer))
+        yield FakeToolResultEvent(
+            tool_call_id="tc-1",
+            result=FakeToolResult(answer=answer, command=args.command),
+        )
         yield FakeAssistantEvent(content=f"done {answer}", message_id="m-assistant-1")
 
 
@@ -315,5 +319,39 @@ async def test_inject_message_lazily_starts_agent_loop_when_runtime_is_available
     assert bridge.messages_to_inject[-1] == "from-api"
     assert "tool_call" in event_types
     assert "tool_result" in event_types
+
+    bridge.stop()
+
+
+@pytest.mark.asyncio
+async def test_edited_args_are_applied_to_tool_invocation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import vibecheck.bridge as bridge_module
+
+    runtime = bridge_module.VibeRuntime(
+        agent_loop_cls=FakeAgentLoop,
+        vibe_config_cls=FakeVibeConfig,
+        approval_yes=FakeApprovalResponse.YES,
+        approval_no=FakeApprovalResponse.NO,
+        ask_result_cls=FakeAskUserQuestionResult,
+        answer_cls=FakeAnswer,
+    )
+    monkeypatch.setattr(bridge_module, "load_vibe_runtime", lambda: runtime)
+
+    manager = RecordingConnectionManager()
+    bridge = SessionBridge("edit-args", connection_manager=manager)
+
+    run_task = asyncio.create_task(bridge.start_session("hello"))
+    await _wait_until(lambda: "tc-1" in bridge.pending_approval)
+    assert bridge.resolve_approval("tc-1", approved=True, edited_args={"command": "pwd"})
+
+    await _wait_until(lambda: len(bridge.pending_input) == 1)
+    request_id = next(iter(bridge.pending_input.keys()))
+    assert bridge.resolve_input(request_id=request_id, response="yes")
+
+    await run_task
+    tool_results = [event for _, event in manager.events if event["type"] == "tool_result"]
+    assert any('"command": "pwd"' in event["output"] for event in tool_results)
 
     bridge.stop()

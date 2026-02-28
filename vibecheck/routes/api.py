@@ -81,5 +81,9 @@ async def input_response(session_id: str, body: InputResponseRequest) -> dict[st
 @router.post("/api/sessions/{session_id}/message")
 async def message(session_id: str, body: MessageRequest) -> dict[str, str]:
     bridge = _session_or_404(session_id)
-    bridge.inject_message(body.content)
+    if not bridge.inject_message(body.content):
+        raise HTTPException(
+            status_code=503,
+            detail="Vibe runtime unavailable; message was not forwarded to AgentLoop",
+        )
     return {"status": "queued"}

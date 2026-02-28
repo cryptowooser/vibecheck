@@ -214,6 +214,40 @@ class SessionBridge:
         ]
         return runtime.ask_result_cls(answers=answers, cancelled=False)
 
+    def _apply_edited_args(self, args: object, edited_args: dict[str, object]) -> bool:
+        if not edited_args:
+            return True
+
+        # Best effort for plain python argument holders used in tests/mocks.
+        applied_any = False
+        for key, value in edited_args.items():
+            if hasattr(args, key):
+                try:
+                    setattr(args, key, value)
+                    applied_any = True
+                except Exception:
+                    pass
+
+        # Prefer full schema re-validation for Pydantic argument models.
+        validator = getattr(args.__class__, "model_validate", None)
+        dump = getattr(args, "model_dump", None)
+        if callable(validator) and callable(dump):
+            try:
+                current = dump(mode="python")
+                if isinstance(current, dict):
+                    merged = {**current, **edited_args}
+                    validated = validator(merged)
+                    updated = validated.model_dump(mode="python")
+                    if isinstance(updated, dict):
+                        for key, value in updated.items():
+                            if hasattr(args, key):
+                                setattr(args, key, value)
+                        return True
+            except Exception:
+                return applied_any
+
+        return applied_any
+
     async def _approval_callback(
         self, tool_name: str, args: object, tool_call_id: str
     ) -> tuple[object, str | None]:
@@ -225,8 +259,12 @@ class SessionBridge:
         runtime = self._vibe_runtime
         yes = runtime.approval_yes if runtime else "y"
         no = runtime.approval_no if runtime else "n"
-        feedback = None
+
         edited_args = approval.get("edited_args")
+        if approval.get("approved") and isinstance(edited_args, dict):
+            self._apply_edited_args(args, edited_args)
+
+        feedback = None
         if edited_args is not None:
             feedback = json.dumps(edited_args, ensure_ascii=True)
         return (yes if approval.get("approved") else no, feedback)
@@ -371,17 +409,18 @@ class SessionBridge:
         self._ensure_message_worker()
         await self._message_queue.join()
 
-    def inject_message(self, content: str) -> None:
+    def inject_message(self, content: str) -> bool:
         self.messages_to_inject.append(content)
-        self._set_state("running")
 
         if self._agent_loop is None:
             try:
                 self._ensure_agent_loop()
             except RuntimeError:
                 self._broadcast_background(UserMessageEvent(content=content))
-                return
+                self._set_state("idle")
+                return False
 
+        self._set_state("running")
         self._message_queue.put_nowait(content)
         try:
             self._ensure_message_worker()
@@ -389,6 +428,9 @@ class SessionBridge:
             # If no running loop is available, keep the message queued for the next
             # async context and still reflect the message in UI immediately.
             self._broadcast_background(UserMessageEvent(content=content))
+            self._set_state("idle")
+            return False
+        return True
 
     def stop(self) -> None:
         if self._message_worker_task and not self._message_worker_task.done():
