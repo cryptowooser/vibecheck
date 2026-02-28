@@ -230,7 +230,7 @@ echo "=== All tests passed ==="
 #!/bin/bash
 # Run against a live server (local or EC2)
 BASE_URL="${1:-http://localhost:7870}"
-PSK="${VIBECHECK_PSK:-test-key}"
+PSK="${VIBECHECK_PSK:?VIBECHECK_PSK must be set}"
 
 echo "Testing $BASE_URL..."
 curl -sf "$BASE_URL/api/health" | jq -e '.status == "ok"'
@@ -386,7 +386,7 @@ scripts/
   - Lifespan context manager (startup/shutdown hooks for bridge)
   - Mount routes
 - [ ] **`vibecheck/auth.py`** — PSK middleware
-  - Read PSK from `VIBECHECK_PSK` env var (error on missing in prod, default `"dev"` in dev)
+  - Read PSK from `VIBECHECK_PSK` env var (always required, fail-fast on missing)
   - Check `X-PSK` header or `?psk=` query param
   - `hmac.compare_digest` for timing-safe comparison
   - Exempt paths: `/`, `/api/health`, static files
@@ -394,23 +394,26 @@ scripts/
   - `GET /api/health` → `{"status": "ok"}`
   - `GET /api/state` → `{"total": 0, "running": 0, "waiting": 0, "idle": 0}`
   - `GET /api/sessions` → `[]`
-  - `POST /api/sessions/{id}/approve` → 501
-  - `POST /api/sessions/{id}/input` → 501
-  - `POST /api/sessions/{id}/message` → 501
+  - `GET /api/sessions/{session_id}` → 501
+  - `POST /api/sessions/{session_id}/approve` → 501
+  - `POST /api/sessions/{session_id}/input` → 501
+  - `POST /api/sessions/{session_id}/message` → 501
 - [ ] **`vibecheck/ws.py`** — WebSocket stub
-  - `WS /ws/events` — accept, send `{"type": "connected"}`, heartbeat every 30s
+  - `WS /ws/events/{session_id}` — accept, send `{"type": "connected", "session_id": "<id>"}`, heartbeat every 30s
   - `ConnectionManager` class: connect, disconnect, broadcast
 - [ ] **`vibecheck/tests/conftest.py`** + **`vibecheck/tests/test_auth.py`**
   - Fixture: `client` (httpx AsyncClient with app)
-  - Tests: health no-auth, state with valid PSK, state with bad PSK → 401, state with no PSK → 401
+  - Tests: health no-auth, state with valid PSK, state with bad PSK → 401, state with no PSK → 401, app startup fails when `VIBECHECK_PSK` is unset
 
 **Verify:**
 ```bash
-uv run python -m vibecheck &                    # starts on :7870
-curl -sf http://localhost:7870/api/health        # {"status": "ok"}
-curl -sf -H "X-PSK: dev" http://localhost:7870/api/state  # {"state": "idle"}
-curl -sf http://localhost:7870/api/state         # 401
-uv run pytest vibecheck/tests/ -v               # all pass
+export VIBECHECK_PSK=dev
+uv run python -m vibecheck &                                  # starts on :7870
+curl -sf http://localhost:7870/api/health                      # {"status": "ok"}
+curl -sf -H "X-PSK: $VIBECHECK_PSK" http://localhost:7870/api/state  # {"total":0,...}
+curl -sf http://localhost:7870/api/state && exit 1 || true     # 401 expected
+uv run pytest vibecheck/tests/test_auth.py -v                  # WU-01 targeted tests pass
+uv run pytest vibecheck/tests/ -v                              # full backend suite passes
 ```
 
 ### WU-02: Frontend Scaffold (Phase 0B)
@@ -435,7 +438,7 @@ uv run pytest vibecheck/tests/ -v               # all pass
   - Header bar (app name + connection indicator placeholder)
   - Main scrollable area (placeholder text)
   - Bottom input bar (placeholder)
-  - Mobile CSS: viewport-fit cover, safe area insets, touch targets ≥ 44px
+  - Mobile CSS: viewport-fit cover, safe area insets, touch targets ≥ 44px (design for 360px–428px widths)
   - Dark theme via CSS custom properties
 - [ ] **Register SW** in `src/main.js`
 
@@ -445,6 +448,8 @@ cd vibecheck/frontend && npm install && npm run build  # exit 0, output in ../st
 npm run dev &                                          # dev server on :5173
 curl -sf http://localhost:5173/                         # returns HTML
 ls ../static/index.html                                # build output exists
+# If any frontend file changed, rerun build before commit:
+npm run build
 ```
 
 ---
@@ -697,21 +702,21 @@ uv run pytest vibecheck/tests/test_ws.py -v
 **Depends on:** WU-01, WU-09
 **Parallel with:** WU-10
 
-- [ ] **`GET /api/sessions/{id}/state`** — return session state + pending request info
+- [ ] **`GET /api/sessions/{session_id}/state`** — return session state + pending request info
   - `{state, pending_approval?: {call_id, tool_name, args}, pending_input?: {request_id, question}}`
-- [ ] **`GET /api/sessions`** — list discovered sessions from `~/.vibe/sessions/`
+- [ ] **`GET /api/sessions`** — list discovered sessions from `~/.vibe/logs/session/`
   - Scan directory, return `[{id, started_at, last_activity, message_count, status}]`
-  - Status: running / waiting_approval / waiting_input / idle / detached
-- [ ] **`GET /api/sessions/{id}`** — session detail + event backlog
-- [ ] **`POST /api/sessions/{id}/approve`** — `{call_id: str, approved: bool, edited_args?: dict}`
+  - Status: running / waiting_approval / waiting_input / idle / disconnected
+- [ ] **`GET /api/sessions/{session_id}`** — session detail + event backlog
+- [ ] **`POST /api/sessions/{session_id}/approve`** — `{call_id: str, approved: bool, edited_args?: dict}`
   - Look up pending approval Future by `call_id` on the session's `SessionBridge`
   - Resolve Future with approval result
   - Broadcast `ApprovalResolution` event to session subscribers
   - 404 if no pending approval with that call_id
-- [ ] **`POST /api/sessions/{id}/input`** — `{request_id: str, response: str}`
+- [ ] **`POST /api/sessions/{session_id}/input`** — `{request_id: str, response: str}`
   - Resolve pending input Future on session's bridge
   - Broadcast resolution event to session subscribers
-- [ ] **`POST /api/sessions/{id}/message`** — `{content: str}`
+- [ ] **`POST /api/sessions/{session_id}/message`** — `{content: str}`
   - Queue message for session bridge to inject into AgentLoop
   - Broadcast `UserMessage` event to session subscribers
 - [ ] **`GET /api/state`** — fleet summary: `{total, running, waiting, idle}`
@@ -743,7 +748,7 @@ uv run pytest vibecheck/tests/test_api.py -v
   - `inject_message(content)` — send user message to AgentLoop
 - [ ] **`SessionManager` class** — discover and manage multiple sessions
   - `sessions: dict[str, SessionBridge]`
-  - `discover()` — scan `~/.vibe/sessions/`, return session metadata
+  - `discover()` — scan `~/.vibe/logs/session/`, return session metadata
   - `attach(session_id)` — create SessionBridge, hook into AgentLoop
   - `detach(session_id)` — unhook callbacks, remove from active sessions
   - `get(session_id)` — return SessionBridge or raise 404
@@ -842,13 +847,13 @@ npm run build
 - [ ] **`ApprovalPanel.svelte`** — sticky bottom panel
   - Shows when `$pendingApproval` is non-null
   - Tool name + args summary (1-2 lines)
-  - Approve button (green) — POST to `/api/approve` with `approved: true`
-  - Deny button (red) — POST to `/api/approve` with `approved: false`
+  - Approve button (green) — POST to `/api/sessions/{session_id}/approve` with `approved: true`
+  - Deny button (red) — POST to `/api/sessions/{session_id}/approve` with `approved: false`
   - Auto-hide after resolution (watch for approval_resolution event)
   - Loading state while POST is in-flight
 - [ ] **`InputBar.svelte`** — bottom text input
   - Text input field + send button
-  - Send → POST to `/api/message` or `/api/input` depending on state
+  - Send → POST to `/api/sessions/{session_id}/message` or `/api/sessions/{session_id}/input` depending on state
   - Disabled when disconnected
   - Placeholder changes based on state: "Send a message..." vs "Answer the question..."
   - Enter key to send, Shift+Enter for newline
@@ -877,9 +882,9 @@ npm run build
   - Start vibecheck server
   - Connect WebSocket client
   - Verify state event received
-  - Inject a message via POST `/api/message`
+  - Inject a message via POST `/api/sessions/{session_id}/message`
   - Verify UserMessage event on WebSocket
-  - Simulate approval flow: set pending approval, POST approve, verify resolution
+  - Simulate approval flow: set pending approval, POST `/api/sessions/{session_id}/approve`, verify resolution
 - [ ] **Deploy to EC2**
   - Build frontend, push to EC2 (git pull or rsync)
   - Start vibecheck: `uv run python -m vibecheck`
@@ -1030,8 +1035,8 @@ uv run pytest vibecheck/tests/ -k "ministral or intensity" -v
 **Depends on:** WU-12 (SessionManager already handles discover/attach/list)
 **Parallel with:** WU-17–WU-22 (feature WUs after integration gate)
 
-- [ ] **`POST /api/sessions/{id}/resume`** — reattach SessionBridge to a past/detached session
-- [ ] **`GET /api/sessions/{id}/diffs`** — return file-change diffs produced during session
+- [ ] **`POST /api/sessions/{session_id}/resume`** — reattach SessionBridge to a past/disconnected session
+- [ ] **`GET /api/sessions/{session_id}/diffs`** — return file-change diffs produced during session
 - [ ] **Tests** — `vibecheck/tests/test_sessions.py`
   - Resume reattaches bridge and returns event backlog
   - Diffs endpoint returns structured before/after data
@@ -1047,14 +1052,14 @@ uv run pytest vibecheck/tests/test_sessions.py -v
 **Depends on:** WU-16, WU-24
 
 - [ ] **Session detail view** — tap session in switcher → expanded view with event backlog
-- [ ] **Session resume** — tap detached session → reattach via `POST /api/sessions/{id}/resume`
+- [ ] **Session resume** — tap disconnected session → reattach via `POST /api/sessions/{session_id}/resume`
 - [ ] **Settings panel** — `SettingsPanel.svelte`
   - Intensity slider (if L4b done)
   - Translation toggle + voice language
   - Notification on/off
   - Theme toggle
 - [ ] **Dark/light theme** — CSS custom properties, `prefers-color-scheme` default
-- [ ] **Tool call diff viewer** — for write_file/search_replace: `GET /api/sessions/{id}/diffs` → before/after
+- [ ] **Tool call diff viewer** — for write_file/search_replace: `GET /api/sessions/{session_id}/diffs` → before/after
 - [ ] **Offline cache** — store last 50 events in localStorage, render on reconnect
 - [ ] **Error states** — friendly messages, retry buttons
 - [ ] **Loading states** — skeletons, spinners

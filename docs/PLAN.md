@@ -78,23 +78,23 @@ The bridge is designed multi-session from the start. All state is keyed by `sess
   - `user_input_callback` — intercept questions, resolve via REST/WS
   - Per-session pending state (`_pending_approval`, `_pending_input`, `_waiting_state`)
 - [ ] `SessionManager` — discover and manage multiple sessions
-  - Scan `~/.vibe/sessions/` for existing Vibe sessions
+  - Scan `~/.vibe/logs/session/` for existing Vibe sessions
   - `attach(session_id)` — create `SessionBridge` for a discovered session
   - `detach(session_id)` — stop receiving events, clean up
   - `list()` — return all known sessions with status (running/waiting/idle)
 - [ ] WebSocket `/ws/events/{session_id}` — stream `BaseEvent` types for one session
   - Clients subscribe to a specific session (room-based routing)
   - Connection tracked per-session: `Dict[str, Set[WebSocket]]`
-- [ ] REST API (all session-scoped):
+- [ ] REST API (session-aware):
   - `GET /api/sessions` — list discovered sessions with status summary
-  - `GET /api/sessions/{id}` — session detail + event backlog
-  - `POST /api/sessions/{id}/approve` — approve/deny tool calls
-  - `POST /api/sessions/{id}/input` — respond to agent questions
-  - `POST /api/sessions/{id}/message` — send new user messages to Vibe
+  - `GET /api/sessions/{session_id}` — session detail + event backlog
+  - `POST /api/sessions/{session_id}/approve` — approve/deny tool calls
+  - `POST /api/sessions/{session_id}/input` — respond to agent questions
+  - `POST /api/sessions/{session_id}/message` — send new user messages to Vibe
   - `GET /api/state` — fleet summary (N running, N waiting, N idle)
 - [ ] Event broadcasting scoped to session subscribers
 
-> **Fallback:** If in-process `AgentLoop` hooks don't work as expected, fall back to Option B (sidecar process: launch Vibe in tmux, watch `~/.vibe/sessions/` JSONL, detect waiting states from terminal output). See README.md § "Option B: Sidecar Process".
+> **Fallback:** If in-process `AgentLoop` hooks don't work as expected, fall back to Option B (sidecar process: launch Vibe in tmux, watch `~/.vibe/logs/session/` JSONL, detect waiting states from terminal output). See README.md § "Option B: Sidecar Process".
 
 ### Layer 2 — Mobile PWA Chat
 
@@ -229,7 +229,7 @@ The bridge is designed multi-session from the start. All state is keyed by `sess
 Multi-session *discovery and switching* is built into L1/L2. This layer adds active orchestration — spawning and tearing down sessions from mobile.
 
 - [ ] `POST /api/sessions` — spawn a new Vibe instance from mobile (project path + initial prompt)
-- [ ] `DELETE /api/sessions/{id}` — gracefully stop a Vibe session
+- [ ] `DELETE /api/sessions/{session_id}` — gracefully stop a Vibe session
 - [ ] Cross-agent context sharing (copy output from Agent A → input to Agent B)
 - [ ] Camera input: snap photo → Mistral Large 3 (multimodal) analyzes → context for Vibe
 - [ ] Screenshot relay: periodic dev machine captures → Large 3 summarizes → phone
@@ -262,7 +262,7 @@ Owns: Vibe integration, FastAPI server, WebSocket event system, all `/api/*` end
 ```
 L0:  Scaffold vibecheck/ package, FastAPI app, PSK auth
      EC2 provisioning, Caddy + Let's Encrypt, Vibe on EC2
-L1:  SessionManager + SessionBridge, session discovery (~/.vibe/sessions/),
+L1:  SessionManager + SessionBridge, session discovery (~/.vibe/logs/session/),
      WS /ws/events/{session_id}, session-scoped REST endpoints, fleet state
 L2:  Session-scoped event broadcasting, session switcher data
 L3:  POST /api/voice/transcribe (Voxtral batch proxy)

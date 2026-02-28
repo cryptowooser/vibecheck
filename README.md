@@ -136,7 +136,7 @@ This gives us a much cleaner, richer mobile experience than terminal scraping.
 │  └──────────────────────┘     │                                      │  │
 │  ┌──────────────────────┐     │  SessionManager                      │  │
 │  │  mistral-vibe #2      │────→│    Dict[session_id, Bridge]         │  │
-│  │  (AgentLoop)          │←────│    discover ~/.vibe/sessions/        │  │
+│  │  (AgentLoop)          │←────│    discover ~/.vibe/logs/session/    │  │
 │  └──────────────────────┘     │    attach/detach per session         │  │
 │  ┌──────────────────────┐     │                                      │  │
 │  │  mistral-vibe #N      │────→│  WebSocket /ws/events/{session_id}  │  │
@@ -144,11 +144,11 @@ This gives us a much cleaner, richer mobile experience than terminal scraping.
 │  └──────────────────────┘     │                                      │  │
 │                                │  REST API:                           │  │
 │                                │  GET  /api/sessions                  │  │
-│                                │  GET  /api/sessions/{id}             │  │
-│                                │  POST /api/sessions/{id}/approve     │  │
-│                                │  POST /api/sessions/{id}/input       │  │
-│                                │  POST /api/sessions/{id}/message     │  │
-│                                │  GET  /api/sessions/{id}/diffs       │  │
+│                                │  GET  /api/sessions/{session_id}     │  │
+│                                │  POST /api/sessions/{session_id}/approve │  │
+│                                │  POST /api/sessions/{session_id}/input   │  │
+│                                │  POST /api/sessions/{session_id}/message │  │
+│                                │  GET  /api/sessions/{session_id}/diffs   │  │
 │                                │  GET  /api/state (fleet summary)     │  │
 │                                │                                      │  │
 │                                │  Notification / Voice / Translation  │  │
@@ -216,7 +216,7 @@ class SessionManager:
         self.sessions: dict[str, SessionBridge] = {}
 
     def discover(self) -> list[dict]:
-        """Scan ~/.vibe/sessions/ for running sessions."""
+        """Scan ~/.vibe/logs/session/ for sessions."""
         ...
 
     def attach(self, session_id: str) -> SessionBridge:
@@ -237,8 +237,8 @@ class VibeBridge:
         self._setup_routes()
     
     def _setup_routes(self):
-        @self.app.websocket("/ws/events")
-        async def event_stream(ws: WebSocket):
+        @self.app.websocket("/ws/events/{session_id}")
+        async def event_stream(ws: WebSocket, session_id: str):
             await ws.accept()
             self.clients.append(ws)
             try:
@@ -250,8 +250,8 @@ class VibeBridge:
             except WebSocketDisconnect:
                 self.clients.remove(ws)
         
-        @self.app.post("/api/approve")
-        async def approve(decision: ApprovalDecision):
+        @self.app.post("/api/sessions/{session_id}/approve")
+        async def approve(session_id: str, decision: ApprovalDecision):
             if self._pending_approval:
                 self._pending_approval.set_result(
                     (decision.verdict, decision.feedback)
@@ -260,16 +260,16 @@ class VibeBridge:
                 return {"status": "ok"}
             return {"status": "no_pending_approval"}
         
-        @self.app.post("/api/input")
-        async def user_input(response: UserInputResponse):
+        @self.app.post("/api/sessions/{session_id}/input")
+        async def user_input(session_id: str, response: UserInputResponse):
             if self._pending_input:
                 self._pending_input.set_result(response.text)
                 self._waiting_state = None
                 return {"status": "ok"}
             return {"status": "no_pending_input"}
         
-        @self.app.post("/api/message")
-        async def send_message(msg: MessageRequest):
+        @self.app.post("/api/sessions/{session_id}/message")
+        async def send_message(session_id: str, msg: MessageRequest):
             """Send a new user message to Vibe."""
             # Queue for the agent loop
             asyncio.create_task(self._inject_message(msg.text))
@@ -357,7 +357,7 @@ class VibeBridge:
 If modifying Vibe's internals is undesirable, run a sidecar that:
 
 1. Launches Vibe inside tmux (like claude-conduit)
-2. Watches `~/.vibe/sessions/` JSONL files (like claude-conduit watches `~/.claude/projects/`)
+2. Watches `~/.vibe/logs/session/` JSONL files (like claude-conduit watches `~/.claude/projects/`)
 3. Polls tmux capture-pane for terminal output
 4. Detects "waiting" state by parsing terminal content for Vibe's approval UI patterns
 
@@ -456,11 +456,11 @@ self.addEventListener('notificationclick', (event) => {
     if (action === 'approve' || action === 'deny') {
         // Quick-action from notification without opening app
         event.waitUntil(
-            fetch('/api/approve', {
+            fetch(`/api/sessions/${data.session_id}/approve`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    verdict: action === 'approve' ? 'YES' : 'SKIP',
+                    approved: action === 'approve',
                     tool_call_id: data.tool_call_id,
                 }),
             })
