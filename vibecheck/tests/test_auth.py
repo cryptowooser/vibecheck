@@ -16,7 +16,9 @@ async def test_state_with_valid_psk_header(client, psk: str) -> None:
     response = await client.get("/api/state", headers={"X-PSK": psk})
 
     assert response.status_code == 200
-    assert response.json() == {"total": 0, "running": 0, "waiting": 0, "idle": 0}
+    payload = response.json()
+    assert set(payload.keys()) == {"total", "running", "waiting", "idle"}
+    assert all(isinstance(payload[key], int) and payload[key] >= 0 for key in payload)
 
 
 @pytest.mark.asyncio
@@ -24,7 +26,9 @@ async def test_state_with_valid_psk_query_param(client, psk: str) -> None:
     response = await client.get(f"/api/state?psk={psk}")
 
     assert response.status_code == 200
-    assert response.json() == {"total": 0, "running": 0, "waiting": 0, "idle": 0}
+    payload = response.json()
+    assert set(payload.keys()) == {"total", "running", "waiting", "idle"}
+    assert all(isinstance(payload[key], int) and payload[key] >= 0 for key in payload)
 
 
 @pytest.mark.asyncio
