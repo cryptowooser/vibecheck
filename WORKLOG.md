@@ -140,3 +140,16 @@
   - `cd frontend-prototype/frontend && npm test` -> 6 passed.
   - `cd frontend-prototype/frontend && npm run build` -> succeeded.
   - `cd frontend-prototype/frontend && npm run test:e2e` -> 2 passed.
+
+### Frontend prototype final race fix (stale onerror before delayed onstop)
+- Added regression test in `frontend-prototype/frontend/src/App.test.js` for ordering:
+  - preview-cancel recording A
+  - start recording B
+  - stale `onerror` from A fires before delayed `onstop` from A
+  - assert A is still treated as dropped and does not disrupt recording B
+- Fixed stale callback handling in `frontend-prototype/frontend/src/App.svelte`:
+  - stale `recorder.onerror` no longer clears dropped-session marker, so delayed `onstop` still short-circuits as canceled.
+- Verification:
+  - `cd frontend-prototype/frontend && npm test` -> 7 passed.
+  - `cd frontend-prototype/frontend && npm run build` -> succeeded.
+  - `cd frontend-prototype/frontend && npm run test:e2e` -> 2 passed.

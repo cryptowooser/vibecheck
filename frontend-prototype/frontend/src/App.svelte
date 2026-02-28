@@ -200,7 +200,6 @@
       stopTracks(stream)
 
       if (!isActiveSession) {
-        droppedRecordingSessionIds.delete(sessionId)
         return
       }
 

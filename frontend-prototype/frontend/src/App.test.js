@@ -271,4 +271,88 @@ describe('App milestone 2 state preview', () => {
       }
     }
   })
+
+  it('does not process dropped recording when stale error arrives before delayed stop', async () => {
+    const stopTrackOne = vi.fn()
+    const stopTrackTwo = vi.fn()
+    const streamOne = { getTracks: () => [{ stop: stopTrackOne }] }
+    const streamTwo = { getTracks: () => [{ stop: stopTrackTwo }] }
+    const originalMediaDevices = Object.getOwnPropertyDescriptor(navigator, 'mediaDevices')
+
+    class DelayedStopRecorder {
+      static instances = []
+      static stopQueue = []
+
+      static isTypeSupported() {
+        return true
+      }
+
+      static emitError(index) {
+        const instance = DelayedStopRecorder.instances[index]
+        if (instance?.onerror) {
+          instance.onerror()
+        }
+      }
+
+      static flushOneStop() {
+        const callback = DelayedStopRecorder.stopQueue.shift()
+        if (callback) {
+          callback()
+        }
+      }
+
+      constructor() {
+        this.state = 'inactive'
+        this.mimeType = 'audio/webm'
+        this.ondataavailable = null
+        this.onerror = null
+        this.onstop = null
+        DelayedStopRecorder.instances.push(this)
+      }
+
+      start() {
+        this.state = 'recording'
+      }
+
+      stop() {
+        this.state = 'inactive'
+        DelayedStopRecorder.stopQueue.push(() => {
+          if (this.onstop) {
+            this.onstop()
+          }
+        })
+      }
+    }
+
+    try {
+      const getUserMedia = vi.fn().mockResolvedValueOnce(streamOne).mockResolvedValueOnce(streamTwo)
+      Object.defineProperty(navigator, 'mediaDevices', {
+        configurable: true,
+        value: { getUserMedia },
+      })
+      vi.stubGlobal('MediaRecorder', DelayedStopRecorder)
+      window.MediaRecorder = DelayedStopRecorder
+
+      render(App)
+
+      await fireEvent.click(screen.getByRole('button', { name: 'Record' }))
+      await fireEvent.click(screen.getByRole('button', { name: 'idle' }))
+      await fireEvent.click(screen.getByRole('button', { name: 'Record' }))
+
+      DelayedStopRecorder.emitError(0)
+      DelayedStopRecorder.flushOneStop()
+      await Promise.resolve()
+
+      expect(fetchMock).not.toHaveBeenCalledWith('/api/stt', expect.anything())
+      expect(screen.getByRole('button', { name: 'Stop' })).toBeInTheDocument()
+      expect(stopTrackOne).toHaveBeenCalled()
+      expect(stopTrackTwo).not.toHaveBeenCalled()
+    } finally {
+      if (originalMediaDevices) {
+        Object.defineProperty(navigator, 'mediaDevices', originalMediaDevices)
+      } else {
+        Reflect.deleteProperty(navigator, 'mediaDevices')
+      }
+    }
+  })
 })
