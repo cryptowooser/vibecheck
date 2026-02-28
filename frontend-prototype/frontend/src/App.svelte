@@ -319,6 +319,7 @@
 
   async function playAudioBlob(audioBlob) {
     stopAudio()
+    statusMessage = 'Speaking...'
     currentAudioUrl = URL.createObjectURL(audioBlob)
     const audio = new Audio(currentAudioUrl)
     audio.preload = 'auto'

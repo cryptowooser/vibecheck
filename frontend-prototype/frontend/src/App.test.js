@@ -726,3 +726,224 @@ describe('App milestone 3 STT integration', () => {
     }
   })
 })
+
+describe('App milestone 4 TTS integration and playback', () => {
+  let fetchMock
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    vi.restoreAllMocks()
+  })
+
+  it('posts selected voice to /api/tts and shows speaking state during playback', async () => {
+    let ttsPayload = null
+    fetchMock = vi.fn(async (resource, options = {}) => {
+      if (resource === '/api/voices') {
+        return jsonResponse({
+          voices: [
+            { voice_id: 'voice-one', name: 'Voice One' },
+            { voice_id: 'voice-two', name: 'Voice Two' },
+          ],
+        })
+      }
+      if (resource === '/api/stt') {
+        return jsonResponse({ text: 'speak this back', language: 'en' })
+      }
+      if (resource === '/api/tts') {
+        ttsPayload = JSON.parse(options.body)
+        return new Response(new Uint8Array([73, 68, 51]), {
+          status: 200,
+          headers: { 'Content-Type': 'audio/mpeg' },
+        })
+      }
+      return jsonResponse({ detail: 'Not found' }, 404)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const originalCreateObjectURL = URL.createObjectURL
+    const originalRevokeObjectURL = URL.revokeObjectURL
+    Object.defineProperty(URL, 'createObjectURL', {
+      configurable: true,
+      value: vi.fn(() => 'blob:mock-audio'),
+    })
+    Object.defineProperty(URL, 'revokeObjectURL', {
+      configurable: true,
+      value: vi.fn(),
+    })
+
+    class ControlledAudio {
+      static instances = []
+
+      constructor() {
+        this.onended = null
+        this.onerror = null
+        this.preload = 'auto'
+        ControlledAudio.instances.push(this)
+      }
+
+      pause() {
+        return undefined
+      }
+
+      play() {
+        return Promise.resolve()
+      }
+    }
+
+    const restoreMediaDevices = installMediaDevices(vi.fn().mockResolvedValue({ getTracks: () => [] }))
+    installRecorderMock({ chunkBytes: 4096 })
+    installDateNowIncrementMock(400)
+    vi.stubGlobal('Audio', ControlledAudio)
+    window.Audio = ControlledAudio
+
+    try {
+      render(App)
+
+      await screen.findByRole('option', { name: 'Voice Two' })
+      await fireEvent.change(screen.getByRole('combobox', { name: 'Voice' }), {
+        target: { value: 'voice-two' },
+      })
+
+      await fireEvent.click(screen.getByRole('button', { name: 'Record' }))
+      await fireEvent.click(screen.getByRole('button', { name: 'Stop' }))
+
+      await waitFor(() => {
+        expect(screen.getByTestId('state-pill')).toHaveTextContent('speaking')
+        expect(screen.getByTestId('status-message')).toHaveTextContent('Speaking...')
+      })
+      expect(ttsPayload).toEqual({ text: 'speak this back', voice_id: 'voice-two' })
+
+      const activeAudio = ControlledAudio.instances.at(-1)
+      expect(activeAudio).toBeDefined()
+      activeAudio.onended()
+
+      await waitFor(() => {
+        expect(screen.getByTestId('state-pill')).toHaveTextContent('idle')
+      })
+      expect(screen.getByTestId('status-message')).toHaveTextContent('Playback complete')
+    } finally {
+      restoreMediaDevices()
+      if (originalCreateObjectURL) {
+        Object.defineProperty(URL, 'createObjectURL', {
+          configurable: true,
+          value: originalCreateObjectURL,
+        })
+      } else {
+        Reflect.deleteProperty(URL, 'createObjectURL')
+      }
+      if (originalRevokeObjectURL) {
+        Object.defineProperty(URL, 'revokeObjectURL', {
+          configurable: true,
+          value: originalRevokeObjectURL,
+        })
+      } else {
+        Reflect.deleteProperty(URL, 'revokeObjectURL')
+      }
+    }
+  })
+
+  it('surfaces playback errors and allows Retry TTS to recover', async () => {
+    let ttsAttempts = 0
+    fetchMock = vi.fn(async (resource) => {
+      if (resource === '/api/voices') {
+        return jsonResponse({
+          voices: [{ voice_id: 'voice-one', name: 'Voice One' }],
+        })
+      }
+      if (resource === '/api/stt') {
+        return jsonResponse({ text: 'retry playback', language: 'en' })
+      }
+      if (resource === '/api/tts') {
+        ttsAttempts += 1
+        return new Response(new Uint8Array([73, 68, 51]), {
+          status: 200,
+          headers: { 'Content-Type': 'audio/mpeg' },
+        })
+      }
+      return jsonResponse({ detail: 'Not found' }, 404)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const originalCreateObjectURL = URL.createObjectURL
+    const originalRevokeObjectURL = URL.revokeObjectURL
+    Object.defineProperty(URL, 'createObjectURL', {
+      configurable: true,
+      value: vi.fn(() => 'blob:mock-audio'),
+    })
+    Object.defineProperty(URL, 'revokeObjectURL', {
+      configurable: true,
+      value: vi.fn(),
+    })
+
+    class FlakyAudio {
+      static playCalls = 0
+
+      constructor() {
+        this.onended = null
+        this.onerror = null
+        this.preload = 'auto'
+      }
+
+      pause() {
+        return undefined
+      }
+
+      play() {
+        FlakyAudio.playCalls += 1
+        if (FlakyAudio.playCalls === 1) {
+          return Promise.reject(new Error('blocked by browser'))
+        }
+        queueMicrotask(() => {
+          if (this.onended) {
+            this.onended()
+          }
+        })
+        return Promise.resolve()
+      }
+    }
+
+    const restoreMediaDevices = installMediaDevices(vi.fn().mockResolvedValue({ getTracks: () => [] }))
+    installRecorderMock({ chunkBytes: 4096 })
+    installDateNowIncrementMock(400)
+    vi.stubGlobal('Audio', FlakyAudio)
+    window.Audio = FlakyAudio
+
+    try {
+      render(App)
+
+      await fireEvent.click(screen.getByRole('button', { name: 'Record' }))
+      await fireEvent.click(screen.getByRole('button', { name: 'Stop' }))
+
+      expect(await screen.findByRole('heading', { name: 'Error' })).toBeInTheDocument()
+      expect(screen.getByText(/playback blocked\. tap retry to play audio\./i)).toBeInTheDocument()
+      expect(ttsAttempts).toBe(1)
+
+      await fireEvent.click(screen.getByRole('button', { name: 'Retry TTS' }))
+
+      await waitFor(() => {
+        expect(screen.getByTestId('state-pill')).toHaveTextContent('idle')
+      })
+      expect(screen.getByTestId('status-message')).toHaveTextContent('Playback complete')
+      expect(screen.queryByRole('heading', { name: 'Error' })).not.toBeInTheDocument()
+      expect(ttsAttempts).toBe(2)
+    } finally {
+      restoreMediaDevices()
+      if (originalCreateObjectURL) {
+        Object.defineProperty(URL, 'createObjectURL', {
+          configurable: true,
+          value: originalCreateObjectURL,
+        })
+      } else {
+        Reflect.deleteProperty(URL, 'createObjectURL')
+      }
+      if (originalRevokeObjectURL) {
+        Object.defineProperty(URL, 'revokeObjectURL', {
+          configurable: true,
+          value: originalRevokeObjectURL,
+        })
+      } else {
+        Reflect.deleteProperty(URL, 'revokeObjectURL')
+      }
+    }
+  })
+})

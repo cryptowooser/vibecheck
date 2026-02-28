@@ -182,3 +182,17 @@
   - `cd frontend-prototype/frontend && npm test` -> 15 passed.
   - `cd frontend-prototype/frontend && npm run build` -> succeeded.
   - `cd frontend-prototype/frontend && npm run test:e2e` -> 2 passed.
+
+### Frontend prototype milestone 4 kickoff (TTS integration + playback)
+- Read `docs/PLAN.md`, `docs/IMPLEMENTATION.md`, `docs/FRONTEND-PROTOTYPE-PLAN.md`, and `docs/FRONTEND-PROTOTYPE-IMPLEMENTATION.md` to align Milestone 4 scope and exit criteria.
+- Added Milestone 4 frontend tests first in `frontend-prototype/frontend/src/App.test.js`:
+  - selected voice ID is sent in `/api/tts` payload
+  - speaking state includes explicit playback status messaging during active audio playback
+  - playback failures surface actionable errors and recover through `Retry TTS`
+- Confirmed red-first failure for the new speaking-status expectation (`Expected: "Speaking...", Received: "Generating speech..."`).
+- Implemented Milestone 4 UI behavior in `frontend-prototype/frontend/src/App.svelte` by switching status to `Speaking...` when audio playback starts.
+- Verification:
+  - `cd frontend-prototype/frontend && npm test` -> 17 passed.
+  - `cd frontend-prototype/frontend && npm run build` -> succeeded.
+  - `cd frontend-prototype/server && uv run pytest tests -v` -> 17 passed.
+  - `cd frontend-prototype/frontend && npm run test:e2e` -> 2 passed (`Mobile Chrome`, `Mobile Safari`).
