@@ -1088,6 +1088,119 @@ describe('App milestone 4 TTS integration and playback', () => {
   })
 })
 
+describe('App visual milestone 2 UI extension', () => {
+  let fetchMock
+
+  beforeEach(() => {
+    fetchMock = vi.fn(async (resource) => {
+      if (resource === '/api/voices') {
+        return jsonResponse({
+          voices: [{ voice_id: 'voice-one', name: 'Voice One' }],
+        })
+      }
+      return jsonResponse({ detail: 'Not found' }, 404)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.unstubAllGlobals()
+    vi.restoreAllMocks()
+  })
+
+  it('renders image controls and keeps Describe disabled until a valid image is selected', async () => {
+    render(App)
+
+    expect(screen.getByRole('heading', { name: 'Image Describe' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Take Photo' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Upload Photo' })).toBeInTheDocument()
+
+    const cameraInput = screen.getByLabelText('Take Photo Input')
+    expect(cameraInput).toHaveAttribute('accept', 'image/*')
+    expect(cameraInput).toHaveAttribute('capture', 'environment')
+
+    const uploadInput = screen.getByLabelText('Upload Photo Input')
+    expect(uploadInput).toHaveAttribute('accept', 'image/*')
+    expect(uploadInput).not.toHaveAttribute('capture')
+
+    expect(screen.getByRole('button', { name: 'Describe' })).toBeDisabled()
+    expect(screen.getByTestId('vision-state-pill')).toHaveTextContent('idle')
+    expect(screen.getByTestId('vision-status-message')).toHaveTextContent('No image selected')
+  })
+
+  it('shows an image preview and enables Describe after selecting a valid image', async () => {
+    render(App)
+
+    const uploadInput = screen.getByLabelText('Upload Photo Input')
+    const validFile = new File([new Uint8Array([137, 80, 78, 71])], 'sample.png', { type: 'image/png' })
+
+    await fireEvent.change(uploadInput, {
+      target: { files: [validFile] },
+    })
+
+    expect(screen.getByRole('button', { name: 'Describe' })).toBeEnabled()
+    expect(screen.getByTestId('vision-state-pill')).toHaveTextContent('image_selected')
+    expect(screen.getByAltText('Selected preview')).toBeInTheDocument()
+    expect(screen.getByText('sample.png')).toBeInTheDocument()
+  })
+
+  it('shows validation error for unsupported image type and keeps Describe disabled', async () => {
+    render(App)
+
+    const uploadInput = screen.getByLabelText('Upload Photo Input')
+    const invalidMimeFile = new File(['plain text'], 'notes.txt', { type: 'text/plain' })
+
+    await fireEvent.change(uploadInput, {
+      target: { files: [invalidMimeFile] },
+    })
+
+    expect(screen.getByTestId('vision-state-pill')).toHaveTextContent('error')
+    expect(screen.getByTestId('vision-error-message')).toHaveTextContent(
+      'Unsupported file type. Use JPEG, PNG, or WEBP.',
+    )
+    expect(screen.getByRole('button', { name: 'Describe' })).toBeDisabled()
+  })
+
+  it('shows validation error for oversized image files', async () => {
+    render(App)
+
+    const uploadInput = screen.getByLabelText('Upload Photo Input')
+    const oversizedBytes = new Uint8Array(10 * 1024 * 1024 + 64)
+    const oversizedFile = new File([oversizedBytes], 'large-photo.jpg', { type: 'image/jpeg' })
+
+    await fireEvent.change(uploadInput, {
+      target: { files: [oversizedFile] },
+    })
+
+    expect(screen.getByTestId('vision-state-pill')).toHaveTextContent('error')
+    expect(screen.getByTestId('vision-error-message')).toHaveTextContent('Image exceeds 10MB limit.')
+    expect(screen.getByRole('button', { name: 'Describe' })).toBeDisabled()
+  })
+
+  it('transitions visual status across image_selected, describing, and described', async () => {
+    vi.useFakeTimers()
+    render(App)
+
+    const uploadInput = screen.getByLabelText('Upload Photo Input')
+    const validFile = new File([new Uint8Array([255, 216, 255, 224])], 'camera.jpg', { type: 'image/jpeg' })
+
+    await fireEvent.change(uploadInput, {
+      target: { files: [validFile] },
+    })
+    expect(screen.getByTestId('vision-state-pill')).toHaveTextContent('image_selected')
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Describe' }))
+    expect(screen.getByTestId('vision-state-pill')).toHaveTextContent('describing')
+    expect(screen.getByTestId('vision-status-message')).toHaveTextContent('Describe image in progress')
+
+    await vi.advanceTimersByTimeAsync(450)
+    expect(screen.getByTestId('vision-state-pill')).toHaveTextContent('described')
+    expect(screen.getByTestId('vision-status-message')).toHaveTextContent('Description ready')
+    expect(screen.getByText('Vision describe preview is ready. API wiring lands in Milestone 3.')).toBeInTheDocument()
+  })
+})
+
 describe('App milestone 5 hardening and stability', () => {
   let fetchMock
   let restorePlaybackMocks

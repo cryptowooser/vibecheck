@@ -391,3 +391,23 @@
   - Gap 2 remained a documented known limitation (`terminal_user_bubble=no_known_limitation`)
 - Artifact policy:
   - Screenshots/recordings intentionally omitted for this run; transcript + checklist evidence used.
+
+### Frontend prototype visual Milestone 2
+- Extended `frontend-prototype/frontend/src/App.svelte` with a new additive visual section:
+  - camera capture action (`Take Photo`) and gallery/desktop upload action (`Upload Photo`)
+  - hidden file inputs with capture/non-capture behavior for Android camera vs gallery paths
+  - client-side image validation (MIME + 10MB max), preview panel, explicit `Describe` button
+  - visual status/state indicator (`idle`, `image_selected`, `describing`, `described`, `error`)
+  - description output panel scaffold and lifecycle transitions for milestone-2 UI verification
+- Added frontend unit tests in `frontend-prototype/frontend/src/App.test.js` to lock the new visual UI behavior:
+  - controls and input attributes
+  - valid-file preview + describe enablement
+  - invalid MIME and oversize validation errors
+  - status transitions from selected to describing to described
+- Added visual styles in `frontend-prototype/frontend/src/app.css` for mobile-first layout and touch-friendly controls.
+- Verification:
+  - `cd frontend-prototype/frontend && npm test -- src/App.test.js -t "App visual milestone 2 UI extension"` -> passed
+  - `cd frontend-prototype/frontend && npm test` -> passed
+  - `cd frontend-prototype/frontend && npm run test:e2e` -> passed
+  - `cd frontend-prototype/frontend && npm run test:secrets` -> passed
+  - `cd frontend-prototype/frontend && npm run build` -> passed

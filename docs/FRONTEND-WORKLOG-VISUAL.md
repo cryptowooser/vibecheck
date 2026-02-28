@@ -2,6 +2,32 @@
 
 ## 2026-02-28
 
+### Milestone 2 - frontend visual UI extension in existing app
+- Extended `frontend-prototype/frontend/src/App.svelte` with additive visual controls and state handling:
+  - `Take Photo` trigger wired to hidden capture input (`accept="image/*"`, `capture="environment"`)
+  - `Upload Photo` trigger wired to hidden non-capture input (`accept="image/*"`)
+  - explicit `Describe` action button
+  - visual state machine (`idle`, `image_selected`, `describing`, `described`, `error`)
+  - image preview panel and separate description output panel
+  - dedicated `Describe image` status indicator and visual state pill
+- Added client-side validation in `App.svelte` before any upload wiring:
+  - MIME allowlist: `image/jpeg`, `image/png`, `image/webp`
+  - max size: `10MB`
+  - actionable validation errors rendered in visual panel
+- Added milestone-2 describe lifecycle simulator (status transitions) without `/api/vision` request wiring yet.
+- Added/extended frontend tests in `frontend-prototype/frontend/src/App.test.js`:
+  - visual controls rendered + capture/non-capture input attributes
+  - valid selection enables `Describe` and renders preview
+  - invalid MIME and oversized file validation paths
+  - status/state transitions through `image_selected -> describing -> described`
+- Updated visual styling in `frontend-prototype/frontend/src/app.css` for mobile-first layout, touch targets, preview container, and visual state tokens.
+- Verification run:
+  - `cd frontend-prototype/frontend && npm test -- src/App.test.js -t "App visual milestone 2 UI extension"` -> passed
+  - `cd frontend-prototype/frontend && npm test` -> passed (`32` tests)
+  - `cd frontend-prototype/frontend && npm run test:e2e` -> passed (`14` tests)
+  - `cd frontend-prototype/frontend && npm run test:secrets` -> passed
+  - `cd frontend-prototype/frontend && npm run build` -> passed
+
 ### Milestone 1 - review hardening pass
 - Addressed reviewer findings in `frontend-prototype/server/server/app.py`:
   - normalized `/api/vision` upstream error mapping to stable client-safe messages (no raw provider payload passthrough)
