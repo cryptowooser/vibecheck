@@ -405,6 +405,9 @@ class SessionBridge:
         args: object,
         tool_call_id: str,
     ) -> None:
+        if tool_call_id not in self.pending_approval:
+            return
+
         callback = self._local_approval_callback
         if callback is None:
             return
@@ -427,6 +430,9 @@ class SessionBridge:
             logger.exception("Local approval callback failed for session %s", self.session_id)
 
     async def _resolve_with_local_input(self, args: object, request_id: str) -> None:
+        if request_id not in self.pending_input:
+            return
+
         callback = self._local_input_callback
         if callback is None:
             return

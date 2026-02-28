@@ -601,3 +601,138 @@ async def test_mobile_resolution_does_not_leave_local_pending_state_stuck() -> N
     assert bridge.resolve_input(request_id=request_id, response="yes")
     await _wait_until(lambda: owner._pending_question is None)
     await _wait_until(lambda: bridge.state == "idle")
+
+
+@pytest.mark.asyncio
+async def test_late_local_approval_task_skips_after_mobile_resolution(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import vibecheck.bridge as bridge_module
+
+    runtime = VibeRuntime(
+        agent_loop_cls=FakeAgentLoop,
+        vibe_config_cls=FakeVibeConfig,
+        approval_yes=FakeApprovalResponse.YES,
+        approval_no=FakeApprovalResponse.NO,
+        ask_result_cls=FakeAskUserQuestionResult,
+        answer_cls=FakeAnswer,
+    )
+    gate = asyncio.Event()
+    real_create_task = bridge_module.asyncio.create_task
+
+    def delayed_create_task(coro, *args, **kwargs):
+        code = getattr(coro, "cr_code", None)
+        if code is not None and code.co_name == "_resolve_with_local_approval":
+            async def delayed() -> object:
+                await gate.wait()
+                return await coro
+
+            return real_create_task(delayed(), *args, **kwargs)
+        return real_create_task(coro, *args, **kwargs)
+
+    monkeypatch.setattr(bridge_module.asyncio, "create_task", delayed_create_task)
+
+    class Owner:
+        def __init__(self) -> None:
+            self._pending_approval = None
+            self.calls = 0
+
+        async def approval_callback(self, _tool: str, _args: object, _call_id: str):
+            self.calls += 1
+            self._pending_approval = asyncio.get_running_loop().create_future()
+            result = await self._pending_approval
+            self._pending_approval = None
+            return result
+
+    owner = Owner()
+    bridge = SessionBridge("late-approval")
+    bridge.attach_to_loop(
+        FakeAgentLoop(FakeVibeConfig.load()),
+        runtime,
+        approval_callback=owner.approval_callback,
+        input_callback=None,
+    )
+
+    assert bridge.inject_message("mobile-first approval")
+    await _wait_until(lambda: "tc-1" in bridge.pending_approval)
+    assert bridge.resolve_approval("tc-1", approved=True)
+
+    gate.set()
+    await asyncio.sleep(0)
+    await asyncio.sleep(0)
+
+    assert owner.calls == 0
+    assert owner._pending_approval is None
+
+    if bridge.pending_input:
+        request_id = next(iter(bridge.pending_input.keys()))
+        assert bridge.resolve_input(request_id=request_id, response="yes")
+    await _wait_until(lambda: bridge.state == "idle")
+    bridge.stop()
+
+
+@pytest.mark.asyncio
+async def test_late_local_input_task_skips_after_mobile_resolution(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import vibecheck.bridge as bridge_module
+
+    runtime = VibeRuntime(
+        agent_loop_cls=FakeAgentLoop,
+        vibe_config_cls=FakeVibeConfig,
+        approval_yes=FakeApprovalResponse.YES,
+        approval_no=FakeApprovalResponse.NO,
+        ask_result_cls=FakeAskUserQuestionResult,
+        answer_cls=FakeAnswer,
+    )
+    gate = asyncio.Event()
+    real_create_task = bridge_module.asyncio.create_task
+
+    def delayed_create_task(coro, *args, **kwargs):
+        code = getattr(coro, "cr_code", None)
+        if code is not None and code.co_name == "_resolve_with_local_input":
+            async def delayed() -> object:
+                await gate.wait()
+                return await coro
+
+            return real_create_task(delayed(), *args, **kwargs)
+        return real_create_task(coro, *args, **kwargs)
+
+    monkeypatch.setattr(bridge_module.asyncio, "create_task", delayed_create_task)
+
+    class Owner:
+        def __init__(self) -> None:
+            self._pending_question = None
+            self.calls = 0
+
+        async def input_callback(self, _args: object):
+            self.calls += 1
+            self._pending_question = asyncio.get_running_loop().create_future()
+            result = await self._pending_question
+            self._pending_question = None
+            return result
+
+    owner = Owner()
+    bridge = SessionBridge("late-input")
+    bridge.attach_to_loop(
+        FakeAgentLoop(FakeVibeConfig.load()),
+        runtime,
+        approval_callback=None,
+        input_callback=owner.input_callback,
+    )
+
+    assert bridge.inject_message("mobile-first input")
+    await _wait_until(lambda: "tc-1" in bridge.pending_approval)
+    assert bridge.resolve_approval("tc-1", approved=True)
+    await _wait_until(lambda: len(bridge.pending_input) == 1)
+    request_id = next(iter(bridge.pending_input.keys()))
+    assert bridge.resolve_input(request_id=request_id, response="yes")
+
+    gate.set()
+    await asyncio.sleep(0)
+    await asyncio.sleep(0)
+
+    assert owner.calls == 0
+    assert owner._pending_question is None
+    await _wait_until(lambda: bridge.state == "idle")
+    bridge.stop()

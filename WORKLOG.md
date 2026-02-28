@@ -237,3 +237,16 @@
   - `uv run pytest vibecheck/tests/test_bridge.py vibecheck/tests/test_launcher.py vibecheck/tests/test_tui_bridge.py -v` -> passed.
   - `scripts/test_live_attach.sh` -> passed.
   - `uv run pytest vibecheck/tests/ -v` -> 60 passed.
+
+### Phase 3 race-window hardening (late local task start)
+- Closed the remaining late-start window in `vibecheck/bridge.py`:
+  - `_resolve_with_local_approval(...)` now returns immediately if `tool_call_id` is no longer pending.
+  - `_resolve_with_local_input(...)` now returns immediately if `request_id` is no longer pending.
+- Added regression tests in `vibecheck/tests/test_bridge.py`:
+  - `test_late_local_approval_task_skips_after_mobile_resolution`
+  - `test_late_local_input_task_skips_after_mobile_resolution`
+  - Both tests delay local callback task start and verify no stuck local pending future after mobile-first resolution.
+- Verification:
+  - `uv run pytest vibecheck/tests/test_bridge.py vibecheck/tests/test_launcher.py vibecheck/tests/test_tui_bridge.py -v` -> passed.
+  - `scripts/test_live_attach.sh` -> passed.
+  - `uv run pytest vibecheck/tests/ -q` -> 62 passed.
