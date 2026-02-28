@@ -46,6 +46,19 @@ PY
 fi
 
 grep -q '"type"' "$OUT_FILE"
-curl -sf -X POST http://localhost:8080/drop >/dev/null
+
+# Confirm disconnect bookkeeping is clean: after client disconnect, no stale
+# websocket should remain in the hub.
+sleep 0.2
+DROP_JSON=$(curl -sf -X POST http://localhost:8080/drop)
+uv run python - <<'PY' "$DROP_JSON"
+import json
+import sys
+
+payload = json.loads(sys.argv[1])
+assert payload["status"] == "ok"
+assert payload["dropped"] == 0, payload
+print("PASS: no stale websocket connections")
+PY
 
 echo "PASS: websocket message received"

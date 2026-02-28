@@ -64,6 +64,33 @@ def build_uvicorn_config(app: Any, port: int) -> uvicorn.Config:
     )
 
 
+def _unlock_vibe_config_paths() -> None:
+    """Unlock Vibe config path access when running outside vibe.cli.entrypoint.main."""
+    try:
+        from vibe.core.paths.config_paths import unlock_config_paths
+    except Exception:
+        return
+
+    try:
+        unlock_config_paths()
+    except Exception:
+        return
+
+
+def _resolve_base_css_path() -> str | None:
+    base_css = getattr(_BaseVibeApp, "CSS_PATH", None)
+    if not isinstance(base_css, str) or not base_css:
+        return None
+
+    module_name = getattr(_BaseVibeApp, "__module__", "")
+    module = sys.modules.get(module_name)
+    module_file = getattr(module, "__file__", None)
+    if not isinstance(module_file, str) or not module_file:
+        return base_css
+
+    return str(Path(module_file).resolve().with_name(base_css))
+
+
 try:
     from vibe.cli.textual_ui.app import VibeApp as _BaseVibeApp
 except Exception:  # pragma: no cover - covered via tests using fake app class
@@ -86,6 +113,9 @@ except Exception:  # pragma: no cover - covered via tests using fake app class
 
 
 class VibeCheckApp(_BaseVibeApp):
+    # Preserve Vibe's stylesheet location when subclassing from a different module.
+    CSS_PATH = _resolve_base_css_path()
+
     def __init__(
         self,
         *,
@@ -219,6 +249,7 @@ def _build_agent_loop(
     runtime: VibeRuntime,
     message_observer: Callable[[object], None] | None = None,
 ):
+    _unlock_vibe_config_paths()
     config = runtime.vibe_config_cls.load()
 
     enabled_tools = getattr(vibe_args, "enabled_tools", None)
