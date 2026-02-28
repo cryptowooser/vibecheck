@@ -64,3 +64,12 @@
 - Added `frontend-prototype/server/pytest.ini` and removed test-time `sys.path` mutation.
 - Expanded backend tests for voice entry shape, STT 413 branch, STT auth-error mapping, and empty TTS upstream audio branch.
 - Aligned prototype docs to implemented backend contract and corrected backend verification command to run from `frontend-prototype/server`.
+
+### Frontend prototype milestone 2 (UI skeleton)
+- Added frontend component test setup for Svelte 5 (`vitest`, `@testing-library/svelte`, `@testing-library/jest-dom`, `jsdom`) with Vite `svelteTesting()` integration.
+- Wrote red-first component tests in `frontend-prototype/frontend/src/App.test.js` for Milestone 2 acceptance: explicit state-preview controls and error-state preview behavior.
+- Implemented a `State Preview` panel in `frontend-prototype/frontend/src/App.svelte` so `idle`, `recording`, `transcribing`, `speaking`, and `error` can be forced without API calls.
+- Added state-specific visual styling in `frontend-prototype/frontend/src/app.css` for clearer differentiation across all five UI states while preserving mobile-safe spacing and touch target sizing.
+- Verification:
+  - `cd frontend-prototype/frontend && npm test` -> 2 passed.
+  - `cd frontend-prototype/frontend && npm run build` -> succeeded.

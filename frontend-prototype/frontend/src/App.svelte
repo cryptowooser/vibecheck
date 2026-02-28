@@ -6,6 +6,20 @@
   const STATE_TRANSCRIBING = 'transcribing'
   const STATE_SPEAKING = 'speaking'
   const STATE_ERROR = 'error'
+  const PREVIEW_STATES = [
+    STATE_IDLE,
+    STATE_RECORDING,
+    STATE_TRANSCRIBING,
+    STATE_SPEAKING,
+    STATE_ERROR,
+  ]
+  const STATE_STATUS = {
+    [STATE_IDLE]: 'Ready',
+    [STATE_RECORDING]: 'Recording preview active',
+    [STATE_TRANSCRIBING]: 'Transcribing preview...',
+    [STATE_SPEAKING]: 'Speaking preview...',
+    [STATE_ERROR]: 'Previewing error state',
+  }
 
   const MIN_RECORDING_MS = 350
   const MIN_AUDIO_BYTES = 1024
@@ -84,6 +98,27 @@
   function clearError() {
     errorMessage = ''
     lastFailedStage = ''
+  }
+
+  function previewState(state) {
+    if (!PREVIEW_STATES.includes(state)) {
+      return
+    }
+
+    if (state !== STATE_SPEAKING) {
+      stopAudio()
+    }
+
+    uiState = state
+    statusMessage = STATE_STATUS[state]
+
+    if (state === STATE_ERROR) {
+      errorMessage = 'Example error message for layout checks.'
+      lastFailedStage = 'stt'
+      return
+    }
+
+    clearError()
   }
 
   function getRecorderMimeType() {
@@ -320,7 +355,7 @@
     <p>Record speech, transcribe, then synthesize playback.</p>
   </header>
 
-  <section class="card controls">
+  <section class={`card controls state-surface state-${uiState}`}>
     <label for="voice-select">Voice</label>
     <select id="voice-select" bind:value={selectedVoiceId} disabled={isRecording() || isBusy()}>
       {#each voices as voice}
@@ -336,8 +371,23 @@
       </button>
     {/if}
 
-    <p class="state-pill">{stateLabel[uiState]}</p>
-    <p class="status">{statusMessage}</p>
+    <p class={`state-pill state-${uiState}`} data-testid="state-pill">{stateLabel[uiState]}</p>
+    <p class="status" data-testid="status-message">{statusMessage}</p>
+  </section>
+
+  <section class="card state-preview">
+    <h2>State Preview</h2>
+    <p class="preview-copy">Use these buttons to preview all UI states without API calls.</p>
+    <div class="preview-grid">
+      {#each PREVIEW_STATES as state}
+        <button
+          class={`preview-button preview-${state} ${uiState === state ? 'is-active' : ''}`}
+          on:click={() => previewState(state)}
+        >
+          {state}
+        </button>
+      {/each}
+    </div>
   </section>
 
   <section class="card transcript">

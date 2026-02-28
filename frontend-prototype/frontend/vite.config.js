@@ -1,8 +1,9 @@
 import { defineConfig } from 'vite'
 import { svelte } from '@sveltejs/vite-plugin-svelte'
+import { svelteTesting } from '@testing-library/svelte/vite'
 
 export default defineConfig({
-  plugins: [svelte()],
+  plugins: [svelte(), svelteTesting()],
   server: {
     host: '0.0.0.0',
     port: 5178,
@@ -12,5 +13,9 @@ export default defineConfig({
         changeOrigin: true,
       },
     },
+  },
+  test: {
+    environment: 'jsdom',
+    setupFiles: ['./src/test-setup.js'],
   },
 })
