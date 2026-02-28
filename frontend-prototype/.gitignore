@@ -1,5 +1,7 @@
 frontend/node_modules/
 frontend/dist/
+frontend/playwright-report/
+frontend/test-results/
 server/.venv/
 server/.pytest_cache/
 server/.mypy_cache/

@@ -87,3 +87,25 @@
   - Tried Playwright mobile screenshot smoke check (`iPhone 12`, `Pixel 7`) against local Vite dev server.
   - Blocked in current environment due missing host browser libs required by Playwright runtime (`libevent-2.1-7t64`, `libgstreamer-plugins-bad1.0-0`, `libflite1`, `libavif16`).
   - Manual on-device iOS/Android check remains pending.
+
+### Frontend prototype Playwright setup (CLI + project integration)
+- Added Playwright as a project dev dependency in `frontend-prototype/frontend` (`@playwright/test`) to avoid transient `npx` installs.
+- Added `frontend-prototype/frontend/playwright.config.js` with:
+  - Mobile projects (`Pixel 7`, `iPhone 12`)
+  - Local dev `webServer` startup on `127.0.0.1:4178`
+  - HTML report output enabled
+- Added mobile smoke test `frontend-prototype/frontend/e2e/mobile-smoke.spec.js`:
+  - Verifies core UI render on mobile projects
+  - Stubs `/api/voices` so test is backend-independent
+  - Verifies all five preview states update the visible state pill
+- Added npm scripts:
+  - `test:e2e`
+  - `test:e2e:headed`
+- Updated `frontend-prototype/.gitignore` for Playwright artifacts:
+  - `frontend/playwright-report/`
+  - `frontend/test-results/`
+- Updated Vitest include pattern in `frontend-prototype/frontend/vite.config.js` so unit test runs exclude Playwright e2e specs.
+- Verification:
+  - `cd frontend-prototype/frontend && npm test` -> 4 passed.
+  - `cd frontend-prototype/frontend && npm run build` -> succeeded.
+  - `cd frontend-prototype/frontend && npm run test:e2e` -> 2 passed (`Mobile Chrome`, `Mobile Safari`).
