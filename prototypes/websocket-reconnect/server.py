@@ -138,11 +138,13 @@ async def ws_events(ws: WebSocket) -> None:
     finally:
         sender.cancel()
         heartbeats.cancel()
-        with contextlib.suppress(Exception):
-            await sender
-        with contextlib.suppress(Exception):
-            await heartbeats
-        hub.unregister(ws)
+        try:
+            with contextlib.suppress(BaseException):
+                await sender
+            with contextlib.suppress(BaseException):
+                await heartbeats
+        finally:
+            hub.unregister(ws)
 
 
 if __name__ == "__main__":

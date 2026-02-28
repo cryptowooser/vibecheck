@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 200" width="800" height="200">
+  <defs>
+    <linearGradient id="flame" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#FF4500"/>
+      <stop offset="40%" stop-color="#FF7000"/>
+      <stop offset="100%" stop-color="#FFB800"/>
+    </linearGradient>
+    <linearGradient id="greenGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#44FF44"/>
+      <stop offset="100%" stop-color="#00CC00"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Dark background -->
+  <rect width="800" height="200" fill="#1a1a1a"/>
+
+  <!-- Green checkmark box -->
+  <g transform="translate(20, 25)">
+    <!-- Box -->
+    <rect x="0" y="0" width="140" height="140" rx="18" ry="18"
+          fill="none" stroke="url(#greenGrad)" stroke-width="8"/>
+    <!-- Checkmark -->
+    <polyline points="30,75 58,105 112,42"
+              fill="none" stroke="url(#greenGrad)" stroke-width="14"
+              stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+
+  <!-- "vibecheck" text in flame gradient -->
+  <text x="190" y="130" font-family="monospace, 'JetBrains Mono', 'Fira Code', 'Cascadia Code'"
+        font-size="96" font-weight="bold" fill="url(#flame)"
+        letter-spacing="-2">vibecheck</text>
+
+  <!-- Tagline -->
+  <text x="195" y="170" font-family="monospace, 'JetBrains Mono', 'Fira Code'"
+        font-size="20" fill="#888888">check your vibes from anywhere</text>
+</svg>

@@ -208,6 +208,10 @@ cython_debug/
 vibecheck/frontend/node_modules/
 vibecheck/static/
 
+# Manual validation artifacts
+artifacts/manual-test/
+scripts/manual-test/.env.local
+
 # Marimo
 marimo/_static/
 marimo/_lsp/

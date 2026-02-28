@@ -1,0 +1,146 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 500" width="900" height="500">
+  <defs>
+    <linearGradient id="flame" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#FF4500"/>
+      <stop offset="40%" stop-color="#FF7000"/>
+      <stop offset="100%" stop-color="#FFB800"/>
+    </linearGradient>
+    <linearGradient id="greenG" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#44FF44"/>
+      <stop offset="100%" stop-color="#00CC00"/>
+    </linearGradient>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="2" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="900" height="500" fill="#0d0d0d"/>
+
+  <!-- PHONE (left) -->
+  <rect x="30" y="60" width="180" height="340" rx="20" ry="20"
+        fill="#1a1a1a" stroke="#555" stroke-width="2"/>
+  <!-- phone screen -->
+  <rect x="42" y="90" width="156" height="280" rx="4" ry="4" fill="#111"/>
+  <!-- phone notch -->
+  <rect x="90" y="64" width="50" height="6" rx="3" ry="3" fill="#333"/>
+  <!-- phone label -->
+  <text x="120" y="50" font-family="monospace" font-size="14" fill="#888"
+        text-anchor="middle">Phone (PWA)</text>
+  <!-- phone content -->
+  <text x="120" y="125" font-family="monospace" font-size="11" fill="#44DD44"
+        text-anchor="middle">vibecheck</text>
+  <text x="120" y="150" font-family="monospace" font-size="9" fill="#888"
+        text-anchor="middle">Chat + Approve</text>
+  <text x="120" y="175" font-family="monospace" font-size="9" fill="#888"
+        text-anchor="middle">Voice + Translate</text>
+  <text x="120" y="200" font-family="monospace" font-size="9" fill="#888"
+        text-anchor="middle">Push Notifications</text>
+  <!-- mic icon -->
+  <circle cx="120" cy="340" r="16" fill="none" stroke="#44DD44" stroke-width="2"/>
+  <text x="120" y="345" font-family="monospace" font-size="14" fill="#44DD44"
+        text-anchor="middle">🎤</text>
+
+  <!-- Arrow: Phone → EC2 -->
+  <line x1="215" y1="230" x2="310" y2="230" stroke="url(#flame)" stroke-width="3"
+        marker-end="url(#arrowhead)"/>
+  <text x="262" y="218" font-family="monospace" font-size="11" fill="#FF7000"
+        text-anchor="middle">HTTPS</text>
+  <text x="262" y="248" font-family="monospace" font-size="11" fill="#FF7000"
+        text-anchor="middle">WSS</text>
+
+  <!-- Arrowhead marker -->
+  <defs>
+    <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#FF7000"/>
+    </marker>
+    <marker id="arrowgreen" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#44DD44"/>
+    </marker>
+    <marker id="arrowblue" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#00AAFF"/>
+    </marker>
+  </defs>
+
+  <!-- EC2 BOX -->
+  <rect x="320" y="30" width="560" height="440" rx="12" ry="12"
+        fill="none" stroke="#444" stroke-width="2" stroke-dasharray="8,4"/>
+  <text x="600" y="22" font-family="monospace" font-size="13" fill="#666"
+        text-anchor="middle">EC2 Instance</text>
+
+  <!-- nginx -->
+  <rect x="340" y="160" width="120" height="60" rx="8" ry="8"
+        fill="#1a1a1a" stroke="#44DD44" stroke-width="2"/>
+  <text x="400" y="185" font-family="monospace" font-size="13" fill="#44DD44"
+        text-anchor="middle" font-weight="bold">nginx</text>
+  <text x="400" y="200" font-family="monospace" font-size="9" fill="#888"
+        text-anchor="middle">TLS + WSS proxy</text>
+
+  <!-- Arrow: nginx → bridge -->
+  <line x1="460" y1="190" x2="520" y2="190" stroke="#44DD44" stroke-width="2"
+        marker-end="url(#arrowgreen)"/>
+
+  <!-- vibecheck bridge -->
+  <rect x="530" y="120" width="180" height="140" rx="8" ry="8"
+        fill="#1a1a1a" stroke="url(#flame)" stroke-width="2"/>
+  <text x="620" y="150" font-family="monospace" font-size="13" fill="url(#flame)"
+        text-anchor="middle" font-weight="bold">vibecheck bridge</text>
+  <text x="620" y="172" font-family="monospace" font-size="10" fill="#888"
+        text-anchor="middle">FastAPI + Starlette</text>
+  <text x="620" y="190" font-family="monospace" font-size="9" fill="#666"
+        text-anchor="middle">WS events · REST API</text>
+  <text x="620" y="206" font-family="monospace" font-size="9" fill="#666"
+        text-anchor="middle">approval/input callbacks</text>
+  <text x="620" y="222" font-family="monospace" font-size="9" fill="#666"
+        text-anchor="middle">Voxtral · Ministral · Large</text>
+  <text x="620" y="245" font-family="monospace" font-size="9" fill="#44DD44"
+        text-anchor="middle">pywebpush (VAPID)</text>
+
+  <!-- Arrow: bridge → Vibe -->
+  <line x1="620" y1="260" x2="620" y2="310" stroke="#44DD44" stroke-width="2"
+        marker-end="url(#arrowgreen)"/>
+  <text x="650" y="290" font-family="monospace" font-size="9" fill="#44DD44">in-process</text>
+
+  <!-- Vibe -->
+  <rect x="530" y="320" width="180" height="120" rx="8" ry="8"
+        fill="#1a1a1a" stroke="#6644FF" stroke-width="2"/>
+  <text x="620" y="350" font-family="monospace" font-size="14" fill="#6644FF"
+        text-anchor="middle" font-weight="bold">Mistral Vibe</text>
+  <text x="620" y="372" font-family="monospace" font-size="10" fill="#888"
+        text-anchor="middle">Textual TUI + AgentLoop</text>
+  <text x="620" y="390" font-family="monospace" font-size="9" fill="#666"
+        text-anchor="middle">Devstral 2 coding agent</text>
+  <text x="620" y="406" font-family="monospace" font-size="9" fill="#666"
+        text-anchor="middle">BaseEvent hierarchy</text>
+  <text x="620" y="422" font-family="monospace" font-size="9" fill="#666"
+        text-anchor="middle">asyncio.Future callbacks</text>
+
+  <!-- Arrow: bridge → Mistral APIs (right) -->
+  <line x1="710" y1="170" x2="770" y2="80" stroke="#FF7000" stroke-width="1.5"
+        stroke-dasharray="4,3" marker-end="url(#arrowhead)"/>
+
+  <!-- Mistral APIs cloud -->
+  <rect x="750" y="42" width="115" height="55" rx="25" ry="25"
+        fill="#1a1a1a" stroke="#FF7000" stroke-width="1.5" stroke-dasharray="4,3"/>
+  <text x="808" y="65" font-family="monospace" font-size="10" fill="#FF7000"
+        text-anchor="middle">Mistral APIs</text>
+  <text x="808" y="80" font-family="monospace" font-size="8" fill="#888"
+        text-anchor="middle">Voxtral · Large · 8B</text>
+
+  <!-- ElevenLabs API cloud -->
+  <line x1="710" y1="145" x2="770" y2="120" stroke="#00AAFF" stroke-width="1.5"
+        stroke-dasharray="4,3" marker-end="url(#arrowblue)"/>
+  <rect x="750" y="105" width="115" height="40" rx="20" ry="20"
+        fill="#1a1a1a" stroke="#00AAFF" stroke-width="1.5" stroke-dasharray="4,3"/>
+  <text x="808" y="122" font-family="monospace" font-size="10" fill="#00AAFF"
+        text-anchor="middle">ElevenLabs</text>
+  <text x="808" y="137" font-family="monospace" font-size="8" fill="#888"
+        text-anchor="middle">TTS · JA + EN</text>
+
+  <!-- Push notification arrow (phone ← bridge, curved) -->
+  <path d="M 530,145 Q 350,60 155,90" fill="none" stroke="#FFB800" stroke-width="1.5"
+        stroke-dasharray="4,3" marker-end="url(#arrowhead)"/>
+  <text x="340" y="80" font-family="monospace" font-size="9" fill="#FFB800"
+        text-anchor="middle">Web Push</text>
+</svg>

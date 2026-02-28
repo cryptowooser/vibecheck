@@ -66,7 +66,11 @@ async def test_state_and_detail_endpoints(api_client) -> None:
 
     state_response = await client.get("/api/sessions/session-a/state", headers={"X-PSK": "dev-psk"})
     assert state_response.status_code == 200
-    assert state_response.json() == {"state": "running"}
+    assert state_response.json() == {
+        "state": "running",
+        "attach_mode": "observe_only",
+        "controllable": False,
+    }
 
     detail_response = await client.get("/api/sessions/session-a", headers={"X-PSK": "dev-psk"})
     assert detail_response.status_code == 200

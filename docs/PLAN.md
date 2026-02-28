@@ -83,7 +83,7 @@ The bridge is designed multi-session from the start. All state is keyed by `sess
   - Per-session pending state (`_pending_approval`, `_pending_input`, `_waiting_state`)
 - [ ] `SessionManager` — discover and manage multiple sessions
   - Scan `~/.vibe/logs/session/` for existing Vibe sessions
-  - `attach(session_id)` — create `SessionBridge` for a discovered session
+  - `attach(session_id)` — create `SessionBridge` for a discovered session (`observe_only` or `replay` mode — **not** live control; live attach requires the session to be started via `vibecheck-vibe`)
   - `detach(session_id)` — stop receiving events, clean up
   - `list()` — return all known sessions with status (running/waiting/idle)
 - [ ] WebSocket `/ws/events/{session_id}` — stream `BaseEvent` types for one session
@@ -122,12 +122,28 @@ Phone (PWA via WSS) ─────┘
   - Event tee: fan out events to both TUI renderer and WebSocket broadcast
   - Dual input: terminal keyboard and phone REST both go through `bridge.inject_message()`
   - Serialized through bridge's `_message_queue` / `_message_worker`
-- [ ] Session API exposes `attach_mode: "live"` so frontend knows full control is available
-- [ ] Approval callback routes to mobile via WebSocket; TUI shows waiting indicator
-  - Mobile is the primary approval surface for the hackathon MVP
-  - TUI keyboard approve/deny is a stretch enhancement
+- [ ] Session API exposes `attach_mode` and `controllable` fields:
+  - `attach_mode: "live"` + `controllable: true` — started via `vibecheck-vibe`, full control
+  - `attach_mode: "managed"` + `controllable: true` — bridge-created loop, full control
+  - `attach_mode: "observe_only"` + `controllable: false` — discovered unmanaged session, read-only
+  - `attach_mode: "replay"` + `controllable: true` — new loop from history, independent of terminal
+- [ ] Approval callback routes to both surfaces; either can resolve
+  - Mobile approves via REST → bridge resolves Future → TUI updates
+  - TUI approves via keyboard → bridge resolves Future → mobile updates via WebSocket
+  - Both surfaces show pending state; first to respond wins
+  - **Status:** Bridge-level dual-surface resolution validated (60 tests). TUI visual cleanup after remote resolution requires Phase 3.1 (WU-32/WU-34) — see below.
 
 > **Fallback:** If VibeApp subclassing proves unworkable, fall back to tmux/PTY sidecar (Option C in `docs/ANALYSIS-session-attachment.md`). Brittle but demoable.
+
+#### Phase 3 status: bridge mechanics complete, TUI integration gaps identified
+
+Phase 3 (WU-25–28) proved the bridge mechanics: callback ownership, event tee, dual-surface resolution (60 tests). **Phase 3.1** (WU-32–34) addresses three TUI integration gaps that only manifest with the real Vibe Textual app:
+
+1. **TUI stuck in approval UI after mobile resolves (High):** Settle resolves the asyncio Future but doesn't trigger Vibe's Textual UI cleanup (`on_approval_app_*` handlers). Must fix before demo. **Fixed in WU-32.**
+2. **Mobile-injected prompts invisible in terminal (Medium):** Vibe's EventHandler ignores `UserMessageEvent` by design. Documented as known limitation for now; fix planned as WU-35 (Phase 7 stretch). See [`docs/PLAN-gap2.md`](./PLAN-gap2.md).
+3. **`_handle_agent_loop_turn` bypass drops loading widget + interrupt (Medium):** Documented in WU-33; loading widget is nice-to-have.
+
+See `docs/ANALYSIS-session-attachment.md` § "Phase 3 Validation: Confirmed Gaps" for full technical detail.
 
 ### Layer 2 — Mobile PWA Chat
 
@@ -350,7 +366,7 @@ L6      Session/diff APIs                    Settings + theme + diff view   ✅ 
 L7+     Stretch backend                      Stretch frontend               ✅ fully
 ```
 
-> **Note:** L1.5 is a backend-only layer (no frontend changes). After L1.5 + L2, layers L3/L4a/L4b/L5/L6 are independent branches — the team can tackle them in any order or split across them freely.
+> **Note:** L1.5 is a backend-only layer (no frontend changes). After L1.5 + Phase 3.1 (TUI hardening) + L2, layers L3/L4a/L4b/L5/L6 are independent branches — the team can tackle them in any order or split across them freely.
 
 ---
 
@@ -358,7 +374,7 @@ L7+     Stretch backend                      Stretch frontend               ✅ 
 
 These are moments where parallel tracks must sync and test together.
 
-### Integration #1: First Live Mobile Demo (after L2)
+### Integration #1: First Live Mobile Demo (after L1.5 + Phase 3.1 + L2)
 
 **What:** Track A's WebSocket + events + callbacks connected to Track B's chat UI on Track C's EC2 instance.
 
@@ -414,7 +430,7 @@ L0 Foundation ──────────────────────
   │     │           └── L9 Smart Autonomy & Showmanship (stretch) ─────
 ```
 
-Note: L1.5 is a prerequisite for all higher layers (it provides the live attach capability). L3, L4a, L5, L6 are **independent of each other** — they all branch from L1.5/L2. L4b depends on L4a. After L1.5 + L2 are working, the team can split across these features in any order.
+Note: L1.5 + Phase 3.1 (TUI hardening) are prerequisites for all higher layers (they provide live attach with correct TUI behavior). L3, L4a, L5, L6 are **independent of each other** — they all branch from L1.5/L2. L4b depends on L4a. After L1.5 + Phase 3.1 + L2 are working, the team can split across these features in any order.
 
 ---
 
@@ -475,7 +491,7 @@ Note: L1.5 is a prerequisite for all higher layers (it provides the live attach 
 | Voxtral fine-tuning? | **Excluded.** No public training code for Realtime architecture. |
 | Demo approach? | **Split-screen** (Vibe terminal + phone mirror via scrcpy) + QR audience participation. See DEMO.md. |
 | Frontend framework? | **Svelte 5 + Vite.** Less code than Vue/React, compiles away the framework, smallest bundles. Good enough AI tooling support. Component model maps well to event types. |
-| Single-session or multi-session? | **Multi-session from day one.** Bridge is keyed by `session_id` from L1. Discover & attach to existing sessions (L1/L2). Spawn/orchestrate is stretch (L8). Cheaper to build in now than retrofit later. |
+| Single-session or multi-session? | **Multi-session from day one.** Bridge is keyed by `session_id` from L1. Discover existing sessions for `observe_only`/`replay` (L1). Live control requires sessions started via `vibecheck-vibe` (L1.5). Spawn/orchestrate is stretch (L8). |
 
 ---
 

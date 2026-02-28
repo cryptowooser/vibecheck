@@ -138,7 +138,7 @@ Mobile REST      → POST /api/sessions/{id}/message   → bridge.inject_message
 
 AgentLoop calls the approval callback (bridge's). Bridge creates a pending approval, broadcasts to mobile via WebSocket, shows an indicator in the TUI. Mobile approves via REST → bridge resolves the Future → AgentLoop proceeds → both TUI and mobile update.
 
-For the hackathon MVP, mobile is the only approval surface. TUI keyboard shortcuts for approve/deny are a stretch enhancement.
+Both TUI and mobile can resolve approvals — first response wins. This is required for the "go back and forth" UX: user can approve from either surface depending on where they are.
 
 ### Session API contract
 
@@ -173,3 +173,76 @@ See `docs/IMPLEMENTATION.md` Phase 3 (Live Attach): WU-25 through WU-28.
 | VibeApp internal APIs change | Pin Vibe version. Document which internals we depend on. |
 | TUI event rendering breaks with pushed events | Test in WU-26 with mock event handler. |
 | Option B fails entirely | Fall back to Option C (tmux/PTY sidecar). |
+
+---
+
+## Phase 3 Validation: Confirmed Gaps
+
+> **Context:** Phase 3 (WU-25–28) is complete. Bridge mechanics are correct: 60 unit/integration tests pass covering callback ownership, event tee, dual-surface resolution, raw event listeners, and attach mode classification. The gaps below are **TUI integration layer** issues that only manifest with the real Vibe Textual app — they cannot be caught by unit tests that mock Textual internals.
+
+### Gap 1 (High): TUI stuck in approval/question UI after mobile resolves
+
+**The problem:** In Vibe, the approval flow has two layers:
+
+1. **asyncio layer:** `_pending_approval = asyncio.Future()` — awaited in the callback, resolved when the user acts
+2. **Textual UI layer:** `_switch_to_approval_app(tool, args)` swaps the bottom dock to show the approval widget. Switching BACK to the input area happens in `on_approval_app_approval_granted` / `on_approval_app_approval_rejected` — Textual event handlers that fire when the user clicks buttons in the approval widget
+
+Our `_settle_local_approval_state()` (bridge.py) correctly resolves layer 1 (sets the Future result so the callback returns and the AgentLoop continues). But it does NOT trigger layer 2 — the `on_approval_app_*` handlers never fire, so the Textual UI stays stuck showing the approval widget with the input area hidden.
+
+**Reference:** `vibe/cli/textual_ui/app.py:666–682` (approval callback sets Future and switches UI), `app.py:399–425` (event handlers that switch UI back)
+
+**Impact:** Terminal is visually frozen. The agent continues, mobile works, but the TUI shows a dead approval dialog. Breaks the "both surfaces work" promise.
+
+**Fix direction:** After settle resolves the Future, fire a synthetic Textual message (e.g., `self.post_message(ApprovalAppApprovalGranted())`) to trigger Vibe's existing UI cleanup path. Alternatively, call `_switch_to_input_app()` directly. Both require reaching into Vibe's Textual internals.
+
+Same pattern applies to `_pending_question` / `on_question_app_answered`.
+
+**Status (2026-02-28):** Implemented in bridge via explicit owner UI reset hook (`_switch_to_input_app()` call from `_settle_local_approval_state` / `_settle_local_input_state`). Requires real-Vibe manual validation in WU-34.
+
+### Gap 2 (Medium): Mobile-injected prompts invisible in terminal
+
+**The problem:** Vibe's `EventHandler.handle_event()` intentionally no-ops on `UserMessageEvent` (reference `event_handler.py:65`). This is by design: in normal Vibe, the TUI mounts the user message widget *before* calling `act()`, making the event redundant.
+
+When the phone injects a message via `bridge.inject_message()` → `_message_worker` → `act()`:
+- `act()` yields `UserMessageEvent`
+- Raw event tee delivers to TuiBridge → `EventHandler.handle_event()`
+- EventHandler ignores `UserMessageEvent`
+- Terminal shows tool calls and assistant response but NOT the originating user prompt
+
+The terminal user sees "ghost conversations" — the agent suddenly starts working with no visible prompt.
+
+**Fix options:**
+1. In `TuiBridge`, detect `UserMessageEvent` from remote sources and explicitly mount a user message widget
+2. Before `act()`, emit a synthetic chat message into the TUI
+3. Accept the limitation and document it (phone user sees everything; terminal sees agent output only)
+
+For hackathon, option 3 is defensible. The phone is the primary control surface when the user is away from the terminal.
+
+**Status (2026-02-28):** Accepted/documented as known limitation in README (Phase 3.1 notes).
+
+### Gap 3 (Medium): `_handle_agent_loop_turn` override drops TUI lifecycle
+
+**The problem:** Our override (launcher.py) routes terminal keyboard input to `bridge.inject_message()`, bypassing Vibe's original `_handle_agent_loop_turn` which manages:
+
+| Vibe behavior | Our override | Impact |
+|---|---|---|
+| `_agent_running` guard (prevents concurrent turns) | Dropped — bridge `_message_queue` serializes instead | Equivalent. No regression. |
+| Loading widget lifecycle (`_loading_widget` mount/unmount) | Dropped | No "thinking" indicator during agent work |
+| Interrupt behavior (Ctrl+C during turn) | Dropped | Terminal user can't interrupt a running turn |
+| History refresh after turn | Dropped | Stale history if terminal user scrolls up |
+
+The queue substitution for `_agent_running` is correct. The loading widget and interrupt losses are noticeable but not critical.
+
+**Fix direction:** Document what's dropped. Optionally reintroduce loading widget by mounting it before `inject_message` and unmounting via event listener when the turn completes.
+
+**Status (2026-02-28):** Documented in launcher code comments + README known limitations; loading widget parity remains optional.
+
+### Summary
+
+| Gap | Severity | Required for demo? | Fix approach |
+|-----|----------|-------------------|--------------|
+| TUI stuck in approval UI | High | Yes — terminal freezes visibly | Fire synthetic Textual messages to trigger UI cleanup |
+| Mobile prompts invisible | Medium | No — phone user sees everything | Document as known limitation |
+| Lifecycle bypass | Medium | No — agent works correctly | Document; loading widget is nice-to-have |
+
+These gaps are tracked as **Phase 3.1: TUI Integration Hardening** in `docs/IMPLEMENTATION.md` (WU-32 through WU-34).

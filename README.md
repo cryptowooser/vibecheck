@@ -22,6 +22,11 @@
 
 ```bash
 export MISTRAL_API_KEY=YOUR_KEY
+
+# Live attach mode (planned, WU-27): runs Vibe TUI + WebSocket bridge in same process
+vibecheck-vibe
+
+# Standalone bridge mode (no TUI, no live attach to terminal session)
 uv run python -m vibecheck
 ```
 
@@ -1204,7 +1209,7 @@ agent_loop.set_user_input_callback(bridge._user_input_callback)
 
 ```python
 BaseEvent
-├── UserMessageEvent(content, message_id)           → Show user message
+├── UserMessageEvent(content, message_id)           → User prompt event
 ├── AssistantEvent(content, stopped_by_middleware)   → Show assistant reply
 ├── ReasoningEvent(content, message_id)              → Show reasoning block
 ├── ToolCallEvent(tool_name, tool_class, args)       → Show tool invocation
@@ -1213,6 +1218,11 @@ BaseEvent
 ├── CompactStartEvent(context_tokens, threshold)     → Show compaction notice
 └── CompactEndEvent(old_tokens, new_tokens)          → Show compaction result
 ```
+
+#### Live Attach Known Limitations (Phase 3.1)
+
+- Phone-injected prompts may not render as user bubbles in the terminal TUI. Upstream Vibe's `EventHandler` intentionally no-ops on `UserMessageEvent`; the phone UI still shows the full conversation.
+- `VibeCheckApp._handle_agent_loop_turn()` delegates to `bridge.inject_message()` for queue ownership. This intentionally drops Vibe's loading widget lifecycle, Ctrl+C turn interrupt behavior, and history refresh in the terminal path.
 
 ### Vibe's Waiting States (What Triggers Notifications)
 
@@ -1327,7 +1337,7 @@ async for event in client.audio.realtime.transcribe_stream(
 
 ## Implementation Plan
 
-> **Source of truth:** [docs/PLAN.md](docs/PLAN.md) (layer-based architecture) and [docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md) (WU-01 through WU-27, phased execution with parallelism).
+> **Source of truth:** [docs/PLAN.md](docs/PLAN.md) (layer-based architecture) and [docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md) (WU-01 through WU-35, phased execution with parallelism).
 >
 > The legacy phase list that was here has been replaced. See those docs for the current work breakdown.
 

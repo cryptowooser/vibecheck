@@ -52,3 +52,342 @@
   - Backend smoke: `uv run python -m vibecheck` + `curl` checks (`/api/health` 200, `/api/state` with PSK 200, without PSK 401).
   - Frontend: `cd vibecheck/frontend && npm install && npm run build` succeeded; output in `vibecheck/static/`.
   - Frontend dev probe: `npm run dev` served on `:5173` and responded to `curl`.
+
+### Reviewer 2 - Phase 0 reimplementation audit
+- Reviewed commit `baf0fa0` and re-ran claimed verification commands:
+  - `uv run pytest vibecheck/tests/test_auth.py -v` -> 6 passed
+  - `uv run pytest vibecheck/tests/ -v` -> 6 passed
+  - `cd vibecheck/frontend && npm run build` -> success
+- Ran additional integration checks against backend-hosted frontend assets/PWA files.
+- Logged findings in `docs/VIBE-REVIEW.md`: quality is improved, but backend static mount currently breaks root asset and PWA paths (`/assets/*`, `/manifest.json`, `/sw.js`, `/icons/*` returning 404).
+
+### Reviewer 2 - static/PWA routing fix verification
+- Reviewed commit `9be9622` (`fix: serve frontend PWA assets from backend root`).
+- Re-ran claimed validations:
+  - `uv run pytest vibecheck/tests/test_static_frontend.py -v` -> passed
+  - `uv run pytest vibecheck/tests/test_auth.py -v` -> 6 passed
+  - `uv run pytest vibecheck/tests/ -v` -> 7 passed
+- Reproduced runtime smoke with backend server:
+  - `/`, `/assets/index-*.js`, `/manifest.json`, `/sw.js`, `/icons/vibe-192.png` all returned 200
+  - `/api/state` with PSK returned 200; without PSK returned 401
+- Appended acceptance follow-up notes to `docs/VIBE-REVIEW.md`.
+
+### Phase 2 implementation (WU-09 to WU-12)
+- Implemented typed event models in `vibecheck/events.py` and added round-trip/validation coverage in `vibecheck/tests/test_events.py`.
+- Built out `SessionBridge`/`SessionManager` in `vibecheck/bridge.py` with:
+  - per-session state, pending approval/input futures, backlog cap, and session discovery from `~/.vibe/logs/session/`
+  - fleet aggregation and session detail helpers for API consumers
+- Replaced stub API routes with real session-backed endpoints in `vibecheck/routes/api.py`:
+  - `GET /api/state`, `GET /api/sessions`, `GET /api/sessions/{session_id}`, `GET /api/sessions/{session_id}/state`
+  - `POST /api/sessions/{session_id}/approve|input|message`
+- Reworked WebSocket manager in `vibecheck/ws.py`:
+  - session rooms (`rooms`, `socket_to_session`) with `connect` auth, `disconnect`, `broadcast`, `broadcast_all`, `send_personal`
+  - connect flow sends `connected` + `state` + backlog, plus 30s heartbeat task
+  - teardown hardened so heartbeat-task failures/cancellation do not skip disconnect cleanup
+- Expanded API/WS/bridge tests:
+  - `vibecheck/tests/test_api.py`
+  - `vibecheck/tests/test_ws.py`
+  - `vibecheck/tests/test_bridge.py`
+- Updated auth state assertions in `vibecheck/tests/test_auth.py` to match dynamic session discovery (`/api/state` values are non-negative ints, not hardcoded zeros).
+- Verification:
+  - `uv run pytest vibecheck/tests/test_events.py -v` -> passed
+  - `uv run pytest vibecheck/tests/test_bridge.py -v` -> passed
+  - `uv run pytest vibecheck/tests/test_api.py -v` -> passed
+  - `uv run pytest vibecheck/tests/test_ws.py -v` -> passed
+  - `uv run pytest vibecheck/tests/ -v` -> passed (34 tests)
+  - backend smoke: `uv run python -m vibecheck` + `curl http://127.0.0.1:7870/api/health` returned `{"status":"ok"}`
+
+### Live Vibe tap probe script (external process reality check)
+- Added `scripts/probe_live_vibe_session.py` to probe a real session log under `~/.vibe/logs/session/` and print:
+  - discovered target session metadata
+  - parsed last-N events (`user_message`, `assistant`, `tool_call`, `tool_result`)
+  - optional short tail window for new live log lines
+  - explicit capability verdict that callback control cannot be attached from an external running `vibe` process
+- Added reusable probe helpers in `vibecheck/live_probe.py` and test coverage in `vibecheck/tests/test_live_probe.py`.
+- Verification:
+  - `uv run pytest vibecheck/tests/test_live_probe.py -v` -> passed
+  - `uv run pytest vibecheck/tests/ -v` -> passed (38 tests)
+  - `uv run python scripts/probe_live_vibe_session.py --tail-seconds 3 --show-last 4` -> passed against live session logs
+
+### Session attachment deep-dive analysis
+- Added `docs/ANALYSIS-session-attachment.md` to clarify the distinction between:
+  - discovery/observe-only attach
+  - replay/resume attach (new loop from history)
+  - true live attach to the same already-running terminal process
+- Documented current constraints of in-process callback wiring (`set_approval_callback`, `set_user_input_callback`) and why unmanaged external `vibe` processes are not automatically controllable.
+- Added recommended roadmap clarifications, attach-mode capability contract, incremental implementation plan, and validation criteria for the "coffee-walk control" promise.
+
+### CRITICAL: Architecture gap identified — bridge creates new AgentLoop, cannot attach to running Vibe
+- **Problem:** Phase 2's `SessionBridge` creates its own `AgentLoop` via `_ensure_agent_loop()`. It cannot control an already-running Vibe terminal process. Vibe has zero IPC — `set_approval_callback()` and `set_user_input_callback()` are in-process method calls, not network endpoints. The product promise ("run Vibe in terminal, control from phone") was impossible with the Phase 2 architecture.
+- **Analysis:** Evaluated four architecture options:
+  - **Option A: Managed startup** — vibecheck replaces vibe. Works but users lose Vibe's Textual TUI (rich tool approval dialogs, streaming output, syntax highlighting). This is what Phase 2 builds. Not acceptable because the UX promise requires terminal + mobile.
+  - **Option B: Sidecar injection into Vibe's entry point** — `vibecheck-vibe` wraps Vibe's CLI. Same process runs Textual TUI + FastAPI/WebSocket server. One shared AgentLoop. **SELECTED.**
+  - **Option C: tmux/PTY sidecar** — Terminal scraping. Fragile (heuristic parsing, keystroke simulation, state drift). Used by Happy and other Claude Code remoting apps — their UX shows the limitations. **Fallback only.**
+  - **Option D: Upstream ACP** — Vibe's `resume_session()` is `NotImplemented`. Not viable for hackathon timeline.
+- **Key architectural insight from Vibe source analysis:** In `vibe/cli/cli.py`, the flow is: create `AgentLoop` (line ~190) → pass to `run_textual_ui(agent_loop=agent_loop)` (line ~203). The TUI and AgentLoop are independent objects. Textual is built on asyncio. We can run uvicorn alongside it as a Textual worker in the same event loop.
+- **Decision:** Option B primary, Option C fallback. User confirmed.
+
+### Phase 3 (Live Attach) inserted into planning docs
+- **`docs/ANALYSIS-session-attachment.md`** — Complete rewrite replacing colleague's initial draft. Now contains:
+  - Problem statement (Vibe has no IPC)
+  - Three attachment modes (observe-only, replay/resume, live attach)
+  - Four architecture options with honest tradeoffs
+  - Decision rationale (Option B primary, Option C fallback)
+  - Detailed Option B architecture: single asyncio loop, bridge owns AgentLoop, event tee pattern, dual input, approval flow
+  - Session API contract with `attach_mode` values
+  - Acceptance test definition
+  - Risk/mitigation table
+- **`docs/PLAN.md`** — Updated:
+  - Architecture diagram: now shows `vibecheck-vibe` with terminal + phone as parallel surfaces
+  - Inserted Layer 1.5 (Live Attach) between L1 and L2
+  - Updated dependency graph: L1.5 is prerequisite for all higher layers
+  - Updated parallelism map: added L1.5 row (backend-only)
+  - Updated Track A: added L1.5 entry
+  - Fixed "In-process vs sidecar?" open question to reference Option B
+- **`docs/IMPLEMENTATION.md`** — Major restructure:
+  - Inserted new **Phase 3: Live Attach (L1.5)** with four work units:
+    - WU-25: Bridge `attach_to_loop()` — wire callbacks on existing AgentLoop, add `attach_mode` field
+    - WU-26: Event tee + TUI bridge rendering — `TuiBridge` adapter, event fan-out to TUI + WebSocket
+    - WU-27: VibeCheckApp + launcher — Textual subclass, uvicorn as worker, `vibecheck-vibe` entry point
+    - WU-28: Live attach integration test — mocked AgentLoop, real FastAPI, acceptance test
+  - Renumbered all subsequent phases: Phase 3→4, 4→5, 5→6, 6→7, 7→8
+  - Renumbered stretch WUs to avoid collision: WU-25→29, WU-26→30, WU-27→31
+  - Updated: ToC, dependency graph, constraints table, WU table, parallelism map, directory structure
+  - Added new files to directory structure: `tui_bridge.py`, `launcher.py`, `test_tui_bridge.py`, `test_launcher.py`, `test_live_attach.py`
+- All 44 existing tests pass after changes (doc-only commit, no code changes).
+
+### Reviewer 2 + Reviewer 3 findings on Phase 3 doc insertion
+- Fixed 7 findings from Reviewer 2 and additional feedback from Reviewer 3:
+  1. **Blocker fixed:** Normalized `act()` ownership — bridge is sole consumer in all modes (live + managed). Removed contradictory "TUI drives act() initially" language from IMPLEMENTATION.md.
+  2. **High fixed:** Integration/deploy steps now reference `vibecheck-vibe` as primary startup path, with `python -m vibecheck` as standalone fallback.
+  3. **High fixed:** Clarified discovered sessions are `observe_only` — live control requires sessions started via `vibecheck-vibe`. Added explicit notes in PLAN.md (L1 SessionManager, Open Questions) and IMPLEMENTATION.md (WU-12).
+  4. **Medium fixed:** Gate labels corrected — Integration #1 says "after L1.5 + L2", stretch WUs reference Phase 5 gate.
+  5. **Medium fixed:** Added `controllable` property alongside `attach_mode` in PLAN.md and IMPLEMENTATION.md — derived from mode, used by frontend to show/hide controls.
+  6. **Medium fixed:** Normalized approval surface — both TUI keyboard and mobile REST can resolve pending approvals (first response wins). Per Reviewer 3: this is required for "go back and forth" UX, not stretch.
+  7. **Low fixed:** Updated WU range from WU-27 to WU-31 in README.md and AGENTS.md.
+- Added explicit Textual + uvicorn spike step in WU-27 (highest technical risk).
+- Files changed: `docs/ANALYSIS-session-attachment.md`, `docs/PLAN.md`, `docs/IMPLEMENTATION.md`, `README.md`, `AGENTS.md`
+
+### Phase 3 implementation (WU-25 to WU-28)
+- Implemented live-attach bridge capabilities in `vibecheck/bridge.py`:
+  - Added `attach_to_loop(agent_loop, vibe_runtime)` for wiring callbacks/message observer onto an existing AgentLoop.
+  - Added `attach_mode` (`live|managed|observe_only|replay`) and derived `controllable` property on `SessionBridge`.
+  - Added bridge event listeners (`add_event_listener` / `remove_event_listener`) and fan-out so bridge events can tee to multiple consumers.
+  - Extended state/session payloads to include `attach_mode` and `controllable`.
+  - Updated `SessionManager.attach()` mode selection: discovered sessions default to `observe_only`; unmanaged new sessions default to `managed`.
+- Added `vibecheck/tui_bridge.py` with `TuiBridge` adapter (`on_bridge_event`) to forward bridge events to Textual-style `handle_event(...)`.
+- Added `vibecheck/launcher.py` and `VibeCheckApp`:
+  - Launcher parses `--ws-port`, builds AgentLoop from Vibe runtime, attaches bridge in `live` mode, and runs TUI app.
+  - `VibeCheckApp` starts uvicorn server worker with `log_level=\"warning\"` and routes TUI turn handling through `bridge.inject_message()` so bridge remains sole `act()` consumer.
+- Registered CLI entrypoint in `pyproject.toml`:
+  - `[project.scripts] vibecheck-vibe = "vibecheck.launcher:launch"`.
+- Added Phase 3 tests:
+  - `vibecheck/tests/test_tui_bridge.py`
+  - `vibecheck/tests/test_launcher.py`
+  - `vibecheck/tests/test_live_attach.py`
+  - Expanded `vibecheck/tests/test_bridge.py` for live attach behavior and attach-mode semantics.
+- Added `scripts/test_live_attach.sh` smoke/integration script.
+- Verification run:
+  - `uv run pytest vibecheck/tests/test_bridge.py vibecheck/tests/test_tui_bridge.py vibecheck/tests/test_launcher.py vibecheck/tests/test_live_attach.py -v` -> passed.
+  - `uv run pytest vibecheck/tests/ -v` -> 54 passed.
+  - `scripts/test_live_attach.sh` -> passed.
+  - `uv run python -m vibecheck` startup smoke + `curl /api/health` -> `{\"status\":\"ok\"}`.
+
+### Phase 3 reviewer feedback fixes (callback ownership + raw event tee)
+- Addressed Reviewer 1/2 blocker on callback ownership in `vibecheck/launcher.py`:
+  - `VibeCheckApp.on_mount()` now rebinds bridge callbacks after `super().on_mount()`.
+  - Added callback interceptors on `agent_loop.set_approval_callback` / `set_user_input_callback` so future rebinds (including agent switches) keep bridge ownership while preserving TUI callbacks as local fallback resolvers.
+- Addressed event type mismatch for TUI tee:
+  - Added raw event listener channel in `SessionBridge` (`add_raw_event_listener`, `_notify_raw_event_listeners`).
+  - `_run_agent_turn()` now fans out raw AgentLoop events to raw listeners before conversion for WebSocket payloads.
+  - `VibeCheckApp` now connects TUI bridge via raw channel, so Textual `EventHandler` receives upstream Vibe event objects.
+- Hardened bridge callback orchestration:
+  - Added optional local callback racing in `SessionBridge` so local TUI approval/input callbacks can resolve the same pending futures (first response wins behavior).
+  - Extended message observer wiring to also patch `agent_loop.messages._observer` when present.
+  - Replaced silent listener exception swallowing with logger-backed exceptions.
+- Hardened launcher lifecycle:
+  - Added uvicorn server handle tracking and graceful `should_exit` signaling on unmount.
+  - `_handle_agent_loop_turn()` now surfaces failed bridge injection via TUI notification.
+  - `_build_agent_loop()` now accepts a `message_observer` parameter; launcher bootstrap uses bridge observer at loop construction.
+- Updated `scripts/test_live_attach.sh` to smoke the launcher entry point (`uv run vibecheck-vibe --help`) in addition to integration and backend startup checks.
+- Added/expanded tests for fixes:
+  - `test_bridge.py`: raw event listener path + local callback resolution path.
+  - `test_tui_bridge.py`: raw event forwarding.
+  - `test_launcher.py`: message observer forwarding and callback rebind/interceptor behavior.
+- Verification run after fixes:
+  - `uv run pytest vibecheck/tests/ -v` -> 59 passed.
+  - `scripts/test_live_attach.sh` -> passed.
+
+### Phase 3 reviewer follow-up fixes (mobile-first race + method matching)
+- Fixed mobile-first resolution race in `vibecheck/bridge.py`:
+  - Removed cancellation of local callback tasks after REST resolution.
+  - Added local callback state settlement helpers to resolve Vibe TUI pending futures safely:
+    - `_settle_local_approval_state(...)` sets `_pending_approval` result when mobile resolves first.
+    - `_settle_local_input_state(...)` sets `_pending_question` result when mobile resolves first.
+  - Wired settlement into `resolve_approval(...)` and `resolve_input(...)`.
+- Fixed interceptor bound-method comparison in `vibecheck/launcher.py`:
+  - Added `_callbacks_match(...)` helper using `__func__` + `__self__` semantics instead of identity-only `is`.
+  - Prevents self-referential local fallback assignment when callback passed is bridge callback.
+- Strengthened test coverage:
+  - Added `test_mobile_resolution_does_not_leave_local_pending_state_stuck` in `vibecheck/tests/test_bridge.py`.
+  - Extended launcher callback interception test in `vibecheck/tests/test_launcher.py` to assert bridge callback re-registration does not overwrite local fallback callbacks.
+- Improved `scripts/test_live_attach.sh` smoke flow:
+  - Added launcher wiring smoke test (`test_on_mount_rebinds_callbacks_and_intercepts_future_rebinds`) so the script now exercises callback interception behavior, not only `--help`.
+- Verification run after follow-up:
+  - `uv run pytest vibecheck/tests/test_bridge.py vibecheck/tests/test_launcher.py vibecheck/tests/test_tui_bridge.py -v` -> passed.
+  - `scripts/test_live_attach.sh` -> passed.
+  - `uv run pytest vibecheck/tests/ -v` -> 60 passed.
+
+### Phase 3 race-window hardening (late local task start)
+- Closed the remaining late-start window in `vibecheck/bridge.py`:
+  - `_resolve_with_local_approval(...)` now returns immediately if `tool_call_id` is no longer pending.
+  - `_resolve_with_local_input(...)` now returns immediately if `request_id` is no longer pending.
+- Added regression tests in `vibecheck/tests/test_bridge.py`:
+  - `test_late_local_approval_task_skips_after_mobile_resolution`
+  - `test_late_local_input_task_skips_after_mobile_resolution`
+  - Both tests delay local callback task start and verify no stuck local pending future after mobile-first resolution.
+- Verification:
+  - `uv run pytest vibecheck/tests/test_bridge.py vibecheck/tests/test_launcher.py vibecheck/tests/test_tui_bridge.py -v` -> passed.
+  - `scripts/test_live_attach.sh` -> passed.
+  - `uv run pytest vibecheck/tests/ -q` -> 62 passed.
+
+### Phase 3.1 (TUI Integration Hardening) — planning inserted
+- **Source:** External reviewer validated Option B approach and identified three TUI integration gaps that unit tests cannot catch (they require the real Vibe Textual app).
+- **Gap 1 (High):** TUI stuck in approval/question widget after mobile resolves. Our `_settle_local_approval_state()` resolves the asyncio Future but doesn't trigger Vibe's Textual UI cleanup (`on_approval_app_*` handlers). The approval widget stays mounted, input area stays hidden.
+- **Gap 2 (Medium):** Mobile-injected prompts invisible in TUI. Vibe's `EventHandler.handle_event()` intentionally no-ops on `UserMessageEvent` because the TUI mounts the widget before `act()`. Phone-injected messages skip that mount → "ghost conversations" in terminal.
+- **Gap 3 (Medium):** `_handle_agent_loop_turn` override drops loading widget lifecycle, Ctrl+C interrupt behavior, and history refresh. Queue serialization replaces `_agent_running` guard (equivalent), but the other losses are visible.
+- **Docs updated:**
+  - `docs/ANALYSIS-session-attachment.md` — Added "Phase 3 Validation: Confirmed Gaps" section with full technical detail and Vibe source references
+  - `docs/PLAN.md` — Added Phase 3.1 status note under L1.5 with summary of all three gaps
+  - `docs/IMPLEMENTATION.md` — Inserted Phase 3.1 with WU-32 (approval UI cleanup, M), WU-33 (remote injection UX + lifecycle audit, S), WU-34 (manual validation with real Vibe, S). Updated ToC, dependency graph, WU table, key constraints, parallelism map, and Phase 5 gate dependencies.
+
+### Phase 3.1 implementation (WU-32 + WU-33 documentation pass)
+- Implemented explicit local TUI cleanup hook in `vibecheck/bridge.py`:
+  - Added `_reset_local_owner_ui(owner)` to call owner `_switch_to_input_app()` when present.
+  - Wired the cleanup into both `_settle_local_approval_state(...)` and `_settle_local_input_state(...)` after future settlement.
+  - Behavior is async-safe: awaitables are scheduled on the active loop and tracked with bridge background task management.
+- Strengthened regression coverage in `vibecheck/tests/test_bridge.py`:
+  - Extended `test_mobile_resolution_does_not_leave_local_pending_state_stuck` to assert `_switch_to_input_app()` is invoked after mobile approval/input resolution.
+  - Ensures the bridge now updates both asyncio state and local TUI mode state.
+- Documented WU-33 lifecycle/UX tradeoffs:
+  - `README.md` now includes a "Live Attach Known Limitations (Phase 3.1)" section covering:
+    - user-prompt visibility limitation for phone-injected `UserMessageEvent` in terminal TUI
+    - deliberate `_handle_agent_loop_turn` lifecycle tradeoffs (loading indicator, interrupt, history refresh)
+  - Added inline parity-tradeoff comment in `vibecheck/launcher.py` next to `_handle_agent_loop_turn`.
+- Verification:
+  - `uv run pytest vibecheck/tests/test_bridge.py::test_mobile_resolution_does_not_leave_local_pending_state_stuck -v` -> passed
+  - `uv run pytest vibecheck/tests/test_bridge.py vibecheck/tests/test_launcher.py vibecheck/tests/test_tui_bridge.py vibecheck/tests/test_live_attach.py -v` -> passed (27 tests)
+  - `uv run pytest vibecheck/tests/ -q` -> passed (62 tests)
+  - `scripts/test_live_attach.sh` -> passed
+
+### WU-34 manual validation harness (operator error reduction)
+- Added a structured manual-test toolkit under `scripts/manual-test/`:
+  - `run.sh` — interactive scenario runner for Phase 3.1/WU-34 with hard acceptance checks and per-scenario pass/fail capture.
+  - `api.sh` — session API helper (state inspection, wait-for-pending, resolve approval/input, send message).
+  - `tui_prompts.sh` — canonical TUI prompts for each manual scenario (approve/reject/question/race/reconnect/running).
+  - `capture.sh` — starts `vibecheck-vibe` with `script` transcript capture into timestamped artifacts.
+  - `README.md` — runbook for multi-terminal execution (Terminal A/B + phone).
+- Added ignore rules to keep manual artifacts/secrets out of git:
+  - `artifacts/manual-test/`
+  - `scripts/manual-test/.env.local`
+- Harness output:
+  - `artifacts/manual-test/wu34-<timestamp>/results.tsv`
+  - `artifacts/manual-test/wu34-<timestamp>/report.md` (commit hash, Vibe version, scenario table, pasteback summary)
+- Script verification:
+  - `bash -n scripts/manual-test/api.sh scripts/manual-test/run.sh scripts/manual-test/capture.sh scripts/manual-test/tui_prompts.sh`
+  - `scripts/manual-test/run.sh --help`
+  - `scripts/manual-test/api.sh --help`
+  - `scripts/manual-test/tui_prompts.sh list`
+  - `scripts/manual-test/capture.sh --help`
+
+### WU-34 runtime preflight hardening + environment sync
+- Encountered real runtime failure during manual launch: `ModuleNotFoundError: tomli_w` when loading reference Vibe modules from `reference/mistral-vibe/`.
+- Installed reference Vibe package/dependencies into the active uv environment:
+  - `uv pip install -e reference/mistral-vibe`
+  - Verified `load_vibe_runtime()` succeeds after install.
+- Hardened `scripts/manual-test/capture.sh` with a preflight runtime check:
+  - Runs `load_vibe_runtime()` before starting TUI.
+  - Fails fast with explicit remediation command instead of full traceback.
+- Updated `scripts/manual-test/README.md` with one-time preflight/install instruction.
+
+### WU-34 live launcher fix: unlock Vibe config paths
+- Encountered runtime error on live launch:
+  - `RuntimeError: Config path is locked` from `vibe/core/paths/config_paths.py` during `VibeConfig.load()`.
+- Root cause:
+  - `vibecheck.launcher` parsed Vibe args but did not run Vibe entrypoint `main()`, so `unlock_config_paths()` was never called.
+- Fix:
+  - Added `_unlock_vibe_config_paths()` in `vibecheck/launcher.py`.
+  - `_build_agent_loop(...)` now calls `_unlock_vibe_config_paths()` before `runtime.vibe_config_cls.load()`.
+- Added isolated regression test (without touching in-progress launcher test edits by other agent):
+  - `vibecheck/tests/test_launcher_config_unlock.py::test_build_agent_loop_unlocks_vibe_config_paths`
+- Verification:
+  - `uv run pytest vibecheck/tests/test_launcher_config_unlock.py -v` -> passed
+  - `uv run pytest vibecheck/tests/test_launcher.py::test_build_agent_loop_passes_message_observer -v` -> passed
+  - real-runtime probe:
+    - `uv run python -c "... _build_agent_loop(...)"` -> `ok AgentLoop`
+
+### WU-34 docs: dedicated operator HOWTO
+- Added `scripts/manual-test/manual-test.howto.md` with a clean end-to-end runbook:
+  - prerequisites, runtime/network assumptions
+  - exact Terminal A/B/phone commands
+  - scenario coverage mapping (S1-S7)
+  - artifact expectations
+  - troubleshooting for common failures:
+    - missing runtime deps (`tomli_w` / `vibe`)
+    - stylesheet path mismatch
+    - `llamacpp` connection failures when `active_model=local`
+- Updated `scripts/manual-test/README.md` to point to the new HOWTO as the canonical operator guide.
+
+### Phase 3.1 reviewer remediation (pre-WU-34 manual pass)
+- Hardened callback-owner discovery in `vibecheck/bridge.py` to avoid `__self__`-only fragility:
+  - Added wrapper-aware owner resolution across bound methods, `__wrapped__`, `functools.partial` (`func` / `args` / `keywords`), and closure-captured owners.
+  - Cached local approval/input owner hints on callback configuration and reused them during settle paths.
+  - Added warning log when a callable local callback exists but owner resolution fails at settle time.
+- Reduced mobile-first ordering flake risk in local TUI reset:
+  - Split reset into `_call_switch_to_input_app(...)` and `_reset_local_owner_ui(...)`.
+  - `_reset_local_owner_ui(...)` now performs immediate reset plus a follow-up `asyncio.sleep(0)` reset task to win late UI-switch races.
+- Restored path-prompt parity in `vibecheck/launcher.py`:
+  - Added `_render_path_prompt` import fallback (safe no-op when Vibe module unavailable).
+  - `_handle_agent_loop_turn(...)` now injects the rendered prompt (`render_path_prompt(prompt, base_dir=Path.cwd())`) before bridge queueing.
+- Added regression coverage:
+  - `test_settle_local_state_resolves_wrapped_and_partial_callbacks`
+  - `test_settle_local_state_schedules_follow_up_ui_reset`
+  - `test_handle_agent_loop_turn_renders_prompt_before_bridge_injection`
+  - Updated launcher on-mount tests to stub `_BaseVibeApp.__init__` / `run_worker` for environment-stable isolation when real Textual `VibeApp` is importable.
+- Verification:
+  - `uv run pytest vibecheck/tests/test_bridge.py::test_settle_local_state_resolves_wrapped_and_partial_callbacks -q` -> passed
+  - `uv run pytest vibecheck/tests/test_bridge.py::test_settle_local_state_schedules_follow_up_ui_reset -q` -> passed
+  - `uv run pytest vibecheck/tests/test_launcher.py::test_handle_agent_loop_turn_renders_prompt_before_bridge_injection -q` -> passed
+  - `uv run pytest vibecheck/tests/ -v` -> 65 passed
+
+### WU-34 manual runner UX: explicit pending-clear progress and abort
+- Updated `scripts/manual-test/run.sh` to replace silent `api wait-clear-*` blocking waits with `wait_for_pending_clear()`:
+  - prints progress every 5s with pending id and elapsed time
+  - supports `q` + Enter abort while waiting and writes a partial report
+  - now used in approve/reject/question/race/reconnect scenarios
+- Verification:
+  - `bash -n scripts/manual-test/run.sh` -> passed
+  - `scripts/manual-test/run.sh --help` -> passed
+
+### WU-34 manual runner robustness: fix scenario-7 completion crash
+- Hardened `scripts/manual-test/run.sh` `build_report()` to avoid `||` inside command substitutions:
+  - `commit_hash` now falls back via explicit post-check instead of inline `||`.
+  - `vibe_version` now uses `uv run python -c` capture with explicit fallback handling.
+- This addresses the late-run shell error observed after Scenario 7 (`command substitution ... unexpected token '||'`).
+- Verification:
+  - `bash -n scripts/manual-test/run.sh` -> passed
+  - `scripts/manual-test/run.sh --help` -> passed
+
+### WU-34 completion: packaged Phase 3.1 manual validation results
+- Packaged the passing run from `artifacts/manual-test/wu34-20260228-080025/results.tsv` into:
+  - local artifact report: `artifacts/manual-test/wu34-20260228-080025/report.md`
+  - reviewer handoff doc: `docs/reports/WU34-2026-02-28.md`
+- Recorded evidence pointers:
+  - scenario checklist results (`results.tsv`)
+  - TUI transcript capture (`artifacts/manual-test/wu34-20260228-080013/tui-transcript.log`)
+  - capture metadata (`artifacts/manual-test/wu34-20260228-080013/meta.txt`)
+- Validation summary:
+  - S1-S7 all passed
+  - Gap 2 remained a documented known limitation (`terminal_user_bubble=no_known_limitation`)
+- Artifact policy:
+  - Screenshots/recordings intentionally omitted for this run; transcript + checklist evidence used.

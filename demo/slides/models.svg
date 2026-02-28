@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 450" width="900" height="450">
+  <defs>
+    <linearGradient id="flame" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#FF4500"/>
+      <stop offset="40%" stop-color="#FF7000"/>
+      <stop offset="100%" stop-color="#FFB800"/>
+    </linearGradient>
+  </defs>
+  <rect width="900" height="450" fill="#0d0d0d"/>
+
+  <text x="450" y="50" font-family="Hack, monospace" font-size="28" fill="url(#flame)"
+        text-anchor="middle" font-weight="bold">4 Mistral Models + ElevenLabs</text>
+
+  <!-- Model rows -->
+  <g font-family="Hack, monospace" font-size="18">
+    <!-- Devstral -->
+    <text x="60" y="115" fill="#6644FF" font-weight="bold">Devstral 2</text>
+    <text x="310" y="115" fill="#888">Coding agent (via Vibe)</text>
+    <text x="660" y="115" fill="#555">core engine</text>
+
+    <!-- Voxtral -->
+    <text x="60" y="170" fill="#44DD44" font-weight="bold">Voxtral Mini</text>
+    <text x="310" y="170" fill="#888">ASR — voice transcription</text>
+    <text x="660" y="170" fill="#555">JA + EN</text>
+
+    <!-- Ministral -->
+    <text x="60" y="225" fill="#FFB800" font-weight="bold">Ministral 8B</text>
+    <text x="310" y="225" fill="#888">Notification copy + urgency</text>
+    <text x="660" y="225" fill="#555">smart alerts</text>
+
+    <!-- Large -->
+    <text x="60" y="280" fill="#FF4500" font-weight="bold">Mistral Large 3</text>
+    <text x="310" y="280" fill="#888">EN ↔ JA translation + VLM</text>
+    <text x="660" y="280" fill="#555">multimodal</text>
+
+    <!-- ElevenLabs -->
+    <text x="60" y="335" fill="#00AAFF" font-weight="bold">ElevenLabs</text>
+    <text x="310" y="335" fill="#888">TTS — text-to-speech</text>
+    <text x="660" y="335" fill="#555">JA + EN</text>
+  </g>
+
+  <!-- divider lines -->
+  <line x1="50" y1="85" x2="850" y2="85" stroke="#333" stroke-width="1"/>
+  <line x1="50" y1="140" x2="850" y2="140" stroke="#222" stroke-width="1"/>
+  <line x1="50" y1="195" x2="850" y2="195" stroke="#222" stroke-width="1"/>
+  <line x1="50" y1="250" x2="850" y2="250" stroke="#222" stroke-width="1"/>
+  <line x1="50" y1="305" x2="850" y2="305" stroke="#222" stroke-width="1"/>
+
+  <!-- footer -->
+  <text x="450" y="420" font-family="Hack, monospace" font-size="14" fill="#444"
+        text-anchor="middle">Mistral API + ElevenLabs API · full voice loop: Voxtral STT → ElevenLabs TTS</text>
+</svg>
