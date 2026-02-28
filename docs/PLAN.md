@@ -134,6 +134,16 @@ Phone (PWA via WSS) ─────┘
 
 > **Fallback:** If VibeApp subclassing proves unworkable, fall back to tmux/PTY sidecar (Option C in `docs/ANALYSIS-session-attachment.md`). Brittle but demoable.
 
+#### Phase 3 status: bridge mechanics complete, TUI integration gaps identified
+
+Phase 3 (WU-25–28) proved the bridge mechanics: callback ownership, event tee, dual-surface resolution (60 tests). **Phase 3.1** (WU-32–34) addresses three TUI integration gaps that only manifest with the real Vibe Textual app:
+
+1. **TUI stuck in approval UI after mobile resolves (High):** Settle resolves the asyncio Future but doesn't trigger Vibe's Textual UI cleanup (`on_approval_app_*` handlers). Must fix before demo.
+2. **Mobile-injected prompts invisible in terminal (Medium):** Vibe's EventHandler ignores `UserMessageEvent` by design. Accept and document for hackathon.
+3. **`_handle_agent_loop_turn` bypass drops loading widget + interrupt (Medium):** Document; loading widget is nice-to-have.
+
+See `docs/ANALYSIS-session-attachment.md` § "Phase 3 Validation: Confirmed Gaps" for full technical detail.
+
 ### Layer 2 — Mobile PWA Chat
 
 > *Demo: "Open phone browser, see Vibe working live, approve tool calls from phone"*

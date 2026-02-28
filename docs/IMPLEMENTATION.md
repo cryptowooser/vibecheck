@@ -17,6 +17,7 @@
 - [Phase 1: Prototypes](#phase-1-prototypes-standalone-fe-components)
 - [Phase 2: Backend Core (L0–L1)](#phase-2-backend-core-l0l1)
 - [Phase 3: Live Attach (L1.5)](#phase-3-live-attach-l15)
+- [Phase 3.1: TUI Integration Hardening](#phase-31-tui-integration-hardening)
 - [Phase 4: Frontend Core (L2)](#phase-4-frontend-core-l2)
 - [Phase 5: Integration #1](#phase-5-integration-1--first-live-mobile-demo)
 - [Phase 6: Feature Branches (L3–L5)](#phase-6-feature-branches-l3l5-parallel)
@@ -45,30 +46,46 @@
                              ▼
                     ┌──────────────────┐
                     │   Phase 3        │
-                    │ Live Attach      │──────────────┐
-                    │ (TUI + Mobile    │              │
-                    │  Bridge, L1.5)   │              │
-                    └────────┬─────────┘              │
-                             │                        │
-┌──────────────────┐         │         ┌──────────────┴───┐
-│   Phase 0B       │         │         │   Phase 5        │
-│ Frontend Scaffold│─────────┼────────▶│ Integration #1   │◀── GATE
-└──────────────────┘         │         │ (first live demo)│
-                             │         └──────┬───────────┘
-┌──────────────────┐         │                │
-│   Phase 1        │         │     ┌──────────┼──────────┬─────────────┐
-│ All 6 Prototypes │─────────┘     │          │          │             │
-│ (independent)    │               ▼          ▼          ▼             │
-└──────────────────┘        ┌──────────┐ ┌────────┐ ┌────────┐        │
-                            │ Phase 6A │ │Phs 6B  │ │Phs 6D  │        │
-                            │ Voice L3 │ │Push L4a│ │Trans L5│        │
-                            └──────────┘ └───┬────┘ └────────┘        │
-                                             │                        │
-                                             ▼                        ▼
-                                       ┌──────────┐           ┌──────────┐
-                                       │ Phase 6C │           │ Phase 7  │
-                                       │Smart L4b │           │ Polish   │
-                                       └──────────┘           └──────────┘
+                    │ Live Attach      │
+                    │ (TUI + Mobile    │
+                    │  Bridge, L1.5)   │
+                    └────────┬─────────┘
+                             │
+                             ▼
+                    ┌──────────────────┐
+                    │   Phase 3.1      │
+                    │ TUI Integration  │─────────────┐
+                    │ Hardening        │             │
+                    └──────────────────┘             │
+                                                    │
+┌──────────────────┐  ┌──────────────────┐          │
+│   Phase 0B       │  │   Phase 1        │          │
+│ Frontend Scaffold│  │ All 6 Prototypes │          │
+└────────┬─────────┘  │ (independent)    │          │
+         │            └────────┬─────────┘          │
+         │    ┌────────────────┘                    │
+         ▼    ▼                                     │
+  ┌──────────────────┐                              │
+  │   Phase 4        │                              │
+  │ Frontend Core    │──────────────────┐           │
+  └──────────────────┘                  │           │
+                              ┌─────────┴───────────┴──┐
+                              │   Phase 5               │
+                              │ Integration #1          │◀── GATE
+                              │ (first live mobile demo)│
+                              └─────────┬───────────────┘
+                    ┌───────────────────┼──────────┬─────────────┐
+                    ▼                   ▼          ▼             │
+             ┌──────────┐        ┌────────┐ ┌────────┐          │
+             │ Phase 6A │        │Phs 6B  │ │Phs 6D  │          │
+             │ Voice L3 │        │Push L4a│ │Trans L5│          │
+             └──────────┘        └───┬────┘ └────────┘          │
+                                     │                          │
+                                     ▼                          ▼
+                               ┌──────────┐           ┌──────────┐
+                               │ Phase 6C │           │ Phase 7  │
+                               │Smart L4b │           │ Polish   │
+                               └──────────┘           └──────────┘
 ```
 
 ### Key constraints
@@ -79,8 +96,10 @@
 | Phase 1 prototypes are **all independent** | Any prototype can be built by any agent at any time — no deps on scaffolds or each other |
 | Phase 2 **requires** Phase 0A | Backend core builds on the scaffold |
 | Phase 3 **requires** Phase 2 | Live attach builds on bridge + events + WS infrastructure |
+| Phase 3.1 **requires** Phase 3 | TUI integration hardening builds on live attach bridge mechanics |
 | Phase 4 **requires** Phase 0B | Frontend core builds on the scaffold; reuses Proto 1 (WS reconnect) code |
-| Phase 5 **requires** Phase 3 + Phase 4 | This is the critical gate — backend (with live attach) + frontend must work |
+| Phase 3.1 and Phase 4 are **parallel** | TUI hardening and frontend core are independent tracks |
+| Phase 5 **requires** Phase 3.1 + Phase 4 | Gate acceptance test needs TUI to not freeze on remote approval |
 | Phase 6A/6B/6D are **fully parallel** | Voice, Push, Translation are independent feature branches |
 | Phase 6C **requires** Phase 6B | Smart notifications build on push infrastructure |
 | Phase 7 **requires** Phase 5 | Polish is post-integration |
@@ -110,10 +129,13 @@ Each work unit (WU) is a self-contained task that one agent can complete indepen
 | WU-26 | 3 | Event tee + TUI bridge rendering | WU-25 | — | M |
 | WU-27 | 3 | VibeCheckApp + launcher | WU-25, WU-26 | — | M |
 | WU-28 | 3 | Live attach integration test | WU-27 | — | S |
+| WU-32 | 3.1 | TUI approval/question UI cleanup on remote resolve | WU-28 | WU-33, WU-13–15 | M |
+| WU-33 | 3.1 | Remote injection UX + lifecycle parity audit | WU-28 | WU-32, WU-13–15 | S |
+| WU-34 | 3.1 | Manual validation with real Vibe | WU-32, WU-33 | — | S |
 | WU-13 | 4 | FE WebSocket client + stores | WU-02, WU-03 | WU-14, WU-15 | M |
 | WU-14 | 4 | FE chat components | WU-02 | WU-13, WU-15 | M |
 | WU-15 | 4 | FE approval panel + input bar | WU-02 | WU-13, WU-14 | M |
-| WU-16 | 5 | Integration: static build + E2E | WU-13–15, WU-28 | — | M |
+| WU-16 | 5 | Integration: static build + E2E | WU-13–15, WU-34 | — | M |
 | WU-17 | 6A | Voice: backend transcribe endpoint | WU-16 | WU-19, WU-21 | S |
 | WU-18 | 6A | Voice: FE mic button | WU-16, WU-04 | WU-19, WU-21 | M |
 | WU-19 | 6B | Push: backend VAPID + pywebpush | WU-16 | WU-17, WU-21 | M |
@@ -132,7 +154,7 @@ Each work unit (WU) is a self-contained task that one agent can complete indepen
 | Start | WU-01 + WU-02 + WU-03 through WU-08 = **up to 8 parallel** |
 | After Phase 0A done | WU-09, WU-10, WU-11 (+ any remaining prototypes) = **3–6 parallel** |
 | After Phase 2 done | WU-25, WU-26 (live attach) + FE WUs if Phase 0B done = **2–5 parallel** |
-| After Phase 3 done | WU-13 + WU-14 + WU-15 = **3 parallel** (frontend core) |
+| After Phase 3 done | WU-32 + WU-33 (TUI hardening) + WU-13 + WU-14 + WU-15 = **up to 5 parallel** |
 | After Phase 5 gate | WU-17 + WU-18 + WU-19 + WU-20 + WU-21 + WU-24 = **6 parallel** |
 
 ---
@@ -928,10 +950,97 @@ scripts/test_live_attach.sh
 
 ---
 
+## Phase 3.1: TUI Integration Hardening
+
+> **Context:** Phase 3 proved bridge mechanics (60 tests). Phase 3.1 addresses Vibe Textual UI integration gaps that only manifest with the real app — discovered during Phase 3 code review. See `docs/ANALYSIS-session-attachment.md` § "Phase 3 Validation: Confirmed Gaps" for full technical analysis.
+> **Parallelism:** WU-32 and WU-33 are independent and can run in parallel. WU-34 requires both. All three run in parallel with Phase 4 (Frontend Core).
+
+### WU-32: TUI Approval/Question UI Cleanup on Remote Resolution (Phase 3.1)
+
+**Depends on:** WU-28
+**Parallel with:** WU-33, WU-13–15
+**Files:** `vibecheck/bridge.py`, `vibecheck/launcher.py`, `vibecheck/tests/test_launcher.py`
+
+**The problem:** `_settle_local_approval_state()` resolves the asyncio Future (layer 1) but doesn't trigger Vibe's Textual UI cleanup (layer 2). In Vibe, switching from the approval widget back to the input area happens in `on_approval_app_approval_granted` / `on_approval_app_approval_rejected` — Textual event handlers fired when the user clicks buttons, not when the Future resolves. After mobile resolves, the TUI stays stuck showing a dead approval dialog.
+
+Same pattern for `_pending_question` / `on_question_app_answered` / `on_question_app_cancelled`.
+
+- [ ] After `_settle_local_approval_state()` sets the Future result, trigger Vibe's UI cleanup:
+  - **Preferred:** Fire a synthetic Textual message (`self.post_message(ApprovalAppApprovalGranted())` or equivalent) to trigger Vibe's existing event handler cleanup path
+  - **Fallback:** Call `_switch_to_input_app()` directly on the VibeApp instance
+  - Both approaches require accessing the VibeApp instance from the settle path — may need to pass app reference to bridge or use a callback
+- [ ] Same fix for question UI: fire `QuestionAppAnswered` or call `_switch_to_question_complete_app()`
+- [ ] Test: verify that after remote resolution, the TUI app receives the synthetic message and the UI state updates
+
+**Verify:**
+```bash
+uv run pytest vibecheck/tests/test_launcher.py -v
+# Manual: start vibecheck-vibe, trigger approval, approve from REST, confirm TUI exits approval UI
+```
+
+### WU-33: Remote Injection UX + Lifecycle Parity Audit (Phase 3.1)
+
+**Depends on:** WU-28
+**Parallel with:** WU-32, WU-13–15
+**Files:** `vibecheck/tui_bridge.py`, `vibecheck/launcher.py`, `docs/ANALYSIS-session-attachment.md`
+
+Two sub-items:
+
+**A. Mobile-injected prompts invisible in TUI (document or fix):**
+
+Vibe's `EventHandler.handle_event()` no-ops on `UserMessageEvent` (reference `event_handler.py:65`) because the TUI mounts the widget before `act()`. Phone-injected messages skip that mount.
+
+- [ ] **Decision:** Fix or document as known limitation
+  - **Fix:** In `TuiBridge.on_bridge_raw_event()`, detect `UserMessageEvent` and explicitly mount a user message widget via the Textual app
+  - **Document:** Accept that terminal shows agent output but not phone-originated prompts. Phone user sees everything.
+- [ ] If documenting: add to ANALYSIS § "Phase 3 Validation" and to README known limitations
+
+**B. `_handle_agent_loop_turn` bypass audit:**
+
+Our override routes keyboard input to `bridge.inject_message()`, dropping Vibe's loading widget, interrupt behavior, and history refresh.
+
+- [ ] Document explicitly what's dropped and why it's acceptable:
+  - `_agent_running` guard → replaced by bridge queue serialization (equivalent)
+  - Loading widget → dropped (no "thinking" indicator)
+  - Ctrl+C interrupt → dropped (can't interrupt running turn from terminal)
+  - History refresh → dropped (stale if scrolling up)
+- [ ] **Optional (nice-to-have):** Reintroduce loading widget — mount before inject, unmount via event listener when turn completes
+
+**Verify:**
+```bash
+uv run pytest vibecheck/tests/test_tui_bridge.py vibecheck/tests/test_launcher.py -v
+```
+
+### WU-34: Manual Validation with Real Vibe (Phase 3.1)
+
+**Depends on:** WU-32, WU-33
+**Files:** (none — validation only, update WORKLOG.md with results)
+
+Run the full acceptance test against a real Vibe installation. This is the test that unit tests cannot perform.
+
+- [ ] Start `vibecheck-vibe` with real Vibe installed
+- [ ] Trigger a tool call that requires approval
+- [ ] Approve from phone (REST API or PWA)
+- [ ] **Verify checklist:**
+  - [ ] Agent continues after mobile approval
+  - [ ] Terminal exits approval/question UI back to normal input (WU-32 fix)
+  - [ ] Phone-injected user prompt is visible in terminal (or explicitly documented as known limitation per WU-33)
+  - [ ] Loading widget behavior is acceptable (or documented per WU-33)
+  - [ ] No stuck tasks, no orphaned futures, no visual artifacts
+- [ ] Log results in WORKLOG.md
+
+**Verify:**
+```bash
+# Manual test — no automated verification possible
+# Document pass/fail for each checklist item in WORKLOG.md
+```
+
+---
+
 ## Phase 4: Frontend Core (L2)
 
 > **Parallelism:** WU-13, WU-14, WU-15 can all start in parallel once WU-02 is done. WU-13 reuses code from Proto WU-03.
-> **Note:** Frontend development can proceed in parallel with Phase 3 (Live Attach) since it depends only on the scaffold + prototypes.
+> **Note:** Frontend development can proceed in parallel with Phase 3.1 (TUI Hardening) since it depends only on the scaffold + prototypes.
 
 ### WU-13: FE WebSocket Client + Stores
 
@@ -1022,7 +1131,7 @@ npm run build
 ## Phase 5: Integration #1 — First Live Mobile Demo
 
 > **GATE:** This is the critical convergence point. All subsequent work depends on this.
-> **Depends on:** WU-12 (backend core) + WU-25–28 (live attach) + WU-13–15 (frontend core)
+> **Depends on:** WU-12 (backend core) + WU-25–28 (live attach) + WU-32–34 (TUI hardening) + WU-13–15 (frontend core)
 
 ### WU-16: Integration + E2E Verification
 

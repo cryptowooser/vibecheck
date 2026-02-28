@@ -250,3 +250,13 @@
   - `uv run pytest vibecheck/tests/test_bridge.py vibecheck/tests/test_launcher.py vibecheck/tests/test_tui_bridge.py -v` -> passed.
   - `scripts/test_live_attach.sh` -> passed.
   - `uv run pytest vibecheck/tests/ -q` -> 62 passed.
+
+### Phase 3.1 (TUI Integration Hardening) — planning inserted
+- **Source:** External reviewer validated Option B approach and identified three TUI integration gaps that unit tests cannot catch (they require the real Vibe Textual app).
+- **Gap 1 (High):** TUI stuck in approval/question widget after mobile resolves. Our `_settle_local_approval_state()` resolves the asyncio Future but doesn't trigger Vibe's Textual UI cleanup (`on_approval_app_*` handlers). The approval widget stays mounted, input area stays hidden.
+- **Gap 2 (Medium):** Mobile-injected prompts invisible in TUI. Vibe's `EventHandler.handle_event()` intentionally no-ops on `UserMessageEvent` because the TUI mounts the widget before `act()`. Phone-injected messages skip that mount → "ghost conversations" in terminal.
+- **Gap 3 (Medium):** `_handle_agent_loop_turn` override drops loading widget lifecycle, Ctrl+C interrupt behavior, and history refresh. Queue serialization replaces `_agent_running` guard (equivalent), but the other losses are visible.
+- **Docs updated:**
+  - `docs/ANALYSIS-session-attachment.md` — Added "Phase 3 Validation: Confirmed Gaps" section with full technical detail and Vibe source references
+  - `docs/PLAN.md` — Added Phase 3.1 status note under L1.5 with summary of all three gaps
+  - `docs/IMPLEMENTATION.md` — Inserted Phase 3.1 with WU-32 (approval UI cleanup, M), WU-33 (remote injection UX + lifecycle audit, S), WU-34 (manual validation with real Vibe, S). Updated ToC, dependency graph, WU table, key constraints, parallelism map, and Phase 5 gate dependencies.
