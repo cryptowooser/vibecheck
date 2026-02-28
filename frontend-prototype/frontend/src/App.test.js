@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/svelte'
+import { fireEvent, render, screen, waitFor } from '@testing-library/svelte'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import App from './App.svelte'
 
@@ -57,6 +57,72 @@ function installRecorderMock({ chunkBytes = 4096 } = {}) {
 
   vi.stubGlobal('MediaRecorder', MockMediaRecorder)
   window.MediaRecorder = MockMediaRecorder
+}
+
+function installPlaybackMocks() {
+  const originalCreateObjectURL = URL.createObjectURL
+  const originalRevokeObjectURL = URL.revokeObjectURL
+
+  Object.defineProperty(URL, 'createObjectURL', {
+    configurable: true,
+    value: vi.fn(() => 'blob:mock-audio'),
+  })
+  Object.defineProperty(URL, 'revokeObjectURL', {
+    configurable: true,
+    value: vi.fn(),
+  })
+
+  class MockAudio {
+    constructor() {
+      this.onended = null
+      this.onerror = null
+      this.preload = 'auto'
+    }
+
+    pause() {
+      return undefined
+    }
+
+    play() {
+      queueMicrotask(() => {
+        if (this.onended) {
+          this.onended()
+        }
+      })
+      return Promise.resolve()
+    }
+  }
+
+  vi.stubGlobal('Audio', MockAudio)
+  window.Audio = MockAudio
+
+  return () => {
+    if (originalCreateObjectURL) {
+      Object.defineProperty(URL, 'createObjectURL', {
+        configurable: true,
+        value: originalCreateObjectURL,
+      })
+    } else {
+      Reflect.deleteProperty(URL, 'createObjectURL')
+    }
+
+    if (originalRevokeObjectURL) {
+      Object.defineProperty(URL, 'revokeObjectURL', {
+        configurable: true,
+        value: originalRevokeObjectURL,
+      })
+    } else {
+      Reflect.deleteProperty(URL, 'revokeObjectURL')
+    }
+  }
+}
+
+function installDateNowIncrementMock(step = 400, start = 1000) {
+  let current = start
+  return vi.spyOn(Date, 'now').mockImplementation(() => {
+    current += step
+    return current
+  })
 }
 
 describe('App milestone 2 state preview', () => {
@@ -391,7 +457,9 @@ describe('App milestone 2 state preview', () => {
 
       DelayedStopRecorder.emitError(0)
       DelayedStopRecorder.flushOneStop()
-      await Promise.resolve()
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: 'Stop' })).toBeInTheDocument()
+      })
 
       expect(fetchMock).not.toHaveBeenCalledWith('/api/stt', expect.anything())
       expect(screen.getByRole('button', { name: 'Stop' })).toBeInTheDocument()
@@ -409,6 +477,7 @@ describe('App milestone 2 state preview', () => {
 
 describe('App milestone 3 STT integration', () => {
   let fetchMock
+  let restorePlaybackMocks
 
   beforeEach(() => {
     fetchMock = vi.fn(async (resource) => {
@@ -420,22 +489,31 @@ describe('App milestone 3 STT integration', () => {
       if (resource === '/api/stt') {
         return jsonResponse({ text: 'transcribed text', language: 'en' })
       }
+      if (resource === '/api/tts') {
+        return new Response(new Uint8Array([73, 68, 51]), {
+          status: 200,
+          headers: { 'Content-Type': 'audio/mpeg' },
+        })
+      }
       return jsonResponse({ detail: 'Not found' }, 404)
     })
     vi.stubGlobal('fetch', fetchMock)
+    restorePlaybackMocks = installPlaybackMocks()
   })
 
   afterEach(() => {
+    if (restorePlaybackMocks) {
+      restorePlaybackMocks()
+      restorePlaybackMocks = null
+    }
     vi.unstubAllGlobals()
     vi.restoreAllMocks()
   })
 
-  it('records, uploads to /api/stt, and renders transcript text', async () => {
+  it('records, uploads to /api/stt, and completes clean playback path', async () => {
     const restoreMediaDevices = installMediaDevices(vi.fn().mockResolvedValue({ getTracks: () => [] }))
     installRecorderMock({ chunkBytes: 4096 })
-
-    const nowValues = [1000, 1800, 2000]
-    vi.spyOn(Date, 'now').mockImplementation(() => nowValues.shift() ?? 2200)
+    installDateNowIncrementMock(400)
 
     try {
       render(App)
@@ -445,6 +523,56 @@ describe('App milestone 3 STT integration', () => {
 
       expect(await screen.findByText('transcribed text')).toBeInTheDocument()
       expect(fetchMock).toHaveBeenCalledWith('/api/stt', expect.objectContaining({ method: 'POST' }))
+      expect(fetchMock).toHaveBeenCalledWith('/api/tts', expect.objectContaining({ method: 'POST' }))
+      await waitFor(() => {
+        expect(screen.getByTestId('state-pill')).toHaveTextContent('idle')
+      })
+      expect(screen.queryByRole('heading', { name: 'Error' })).not.toBeInTheDocument()
+      expect(screen.getByTestId('status-message')).toHaveTextContent('Playback complete')
+    } finally {
+      restoreMediaDevices()
+    }
+  })
+
+  it('posts expected FormData fields to /api/stt', async () => {
+    let sttRequestBody
+    fetchMock = vi.fn(async (resource, options = {}) => {
+      if (resource === '/api/voices') {
+        return jsonResponse({
+          voices: [{ voice_id: 'voice-one', name: 'Voice One' }],
+        })
+      }
+      if (resource === '/api/stt') {
+        sttRequestBody = options.body
+        return jsonResponse({ text: 'shape check', language: 'en' })
+      }
+      if (resource === '/api/tts') {
+        return new Response(new Uint8Array([73, 68, 51]), {
+          status: 200,
+          headers: { 'Content-Type': 'audio/mpeg' },
+        })
+      }
+      return jsonResponse({ detail: 'Not found' }, 404)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const restoreMediaDevices = installMediaDevices(vi.fn().mockResolvedValue({ getTracks: () => [] }))
+    installRecorderMock({ chunkBytes: 4096 })
+    installDateNowIncrementMock(400)
+
+    try {
+      render(App)
+
+      await fireEvent.click(screen.getByRole('button', { name: 'Record' }))
+      await fireEvent.click(screen.getByRole('button', { name: 'Stop' }))
+
+      await screen.findByText('shape check')
+      expect(sttRequestBody).toBeInstanceOf(FormData)
+      expect(sttRequestBody.get('language')).toBe('en')
+
+      const audioField = sttRequestBody.get('audio')
+      expect(audioField).toBeInstanceOf(Blob)
+      expect(audioField.size).toBeGreaterThan(0)
     } finally {
       restoreMediaDevices()
     }
@@ -467,12 +595,30 @@ describe('App milestone 3 STT integration', () => {
     }
   })
 
+  it('shows unsupported-browser error when MediaRecorder is unavailable', async () => {
+    const restoreMediaDevices = installMediaDevices(vi.fn().mockResolvedValue({ getTracks: () => [] }))
+    const originalWindowMediaRecorder = window.MediaRecorder
+
+    try {
+      window.MediaRecorder = undefined
+
+      render(App)
+
+      await fireEvent.click(screen.getByRole('button', { name: 'Record' }))
+
+      expect(await screen.findByRole('heading', { name: 'Error' })).toBeInTheDocument()
+      expect(screen.getByText(/does not support recording/i)).toBeInTheDocument()
+      expect(fetchMock).not.toHaveBeenCalledWith('/api/stt', expect.anything())
+    } finally {
+      window.MediaRecorder = originalWindowMediaRecorder
+      restoreMediaDevices()
+    }
+  })
+
   it('rejects very short recordings and does not call /api/stt', async () => {
     const restoreMediaDevices = installMediaDevices(vi.fn().mockResolvedValue({ getTracks: () => [] }))
     installRecorderMock({ chunkBytes: 4096 })
-
-    const nowValues = [1000, 1150]
-    vi.spyOn(Date, 'now').mockImplementation(() => nowValues.shift() ?? 1200)
+    installDateNowIncrementMock(100)
 
     try {
       render(App)
@@ -482,6 +628,61 @@ describe('App milestone 3 STT integration', () => {
 
       expect(await screen.findByText(/recording is too short/i)).toBeInTheDocument()
       expect(fetchMock).not.toHaveBeenCalledWith('/api/stt', expect.anything())
+    } finally {
+      restoreMediaDevices()
+    }
+  })
+
+  it('rejects recordings smaller than the byte-size floor and does not call /api/stt', async () => {
+    const restoreMediaDevices = installMediaDevices(vi.fn().mockResolvedValue({ getTracks: () => [] }))
+    installRecorderMock({ chunkBytes: 1500 })
+    installDateNowIncrementMock(400)
+
+    try {
+      render(App)
+
+      await fireEvent.click(screen.getByRole('button', { name: 'Record' }))
+      await fireEvent.click(screen.getByRole('button', { name: 'Stop' }))
+
+      expect(await screen.findByText(/recording is too short/i)).toBeInTheDocument()
+      expect(fetchMock).not.toHaveBeenCalledWith('/api/stt', expect.anything())
+    } finally {
+      restoreMediaDevices()
+    }
+  })
+
+  it('shows explicit error when STT response text is empty', async () => {
+    fetchMock = vi.fn(async (resource) => {
+      if (resource === '/api/voices') {
+        return jsonResponse({
+          voices: [{ voice_id: 'voice-one', name: 'Voice One' }],
+        })
+      }
+      if (resource === '/api/stt') {
+        return jsonResponse({ text: '   ', language: 'en' })
+      }
+      if (resource === '/api/tts') {
+        return new Response(new Uint8Array([73, 68, 51]), {
+          status: 200,
+          headers: { 'Content-Type': 'audio/mpeg' },
+        })
+      }
+      return jsonResponse({ detail: 'Not found' }, 404)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const restoreMediaDevices = installMediaDevices(vi.fn().mockResolvedValue({ getTracks: () => [] }))
+    installRecorderMock({ chunkBytes: 4096 })
+    installDateNowIncrementMock(400)
+
+    try {
+      render(App)
+
+      await fireEvent.click(screen.getByRole('button', { name: 'Record' }))
+      await fireEvent.click(screen.getByRole('button', { name: 'Stop' }))
+
+      expect(await screen.findByText(/transcription came back empty/i)).toBeInTheDocument()
+      expect(fetchMock).not.toHaveBeenCalledWith('/api/tts', expect.anything())
     } finally {
       restoreMediaDevices()
     }
@@ -505,8 +706,7 @@ describe('App milestone 3 STT integration', () => {
 
     const restoreMediaDevices = installMediaDevices(vi.fn().mockResolvedValue({ getTracks: () => [] }))
     installRecorderMock({ chunkBytes: 4096 })
-    const nowValues = [1000, 1800, 2200]
-    vi.spyOn(Date, 'now').mockImplementation(() => nowValues.shift() ?? 2400)
+    installDateNowIncrementMock(400)
 
     try {
       render(App)

@@ -22,7 +22,7 @@
   }
 
   const MIN_RECORDING_MS = 350
-  const MIN_AUDIO_BYTES = 1024
+  const MIN_AUDIO_BYTES = 2048
   const FALLBACK_VOICES = [
     { voice_id: 'JBFqnCBsd6RMkjVDRZzb', name: 'George' },
     { voice_id: 'EXAVITQu4vr4xnSDxMaL', name: 'Bella' },

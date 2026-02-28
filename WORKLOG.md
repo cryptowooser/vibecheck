@@ -165,3 +165,20 @@
 - Verification:
   - `cd frontend-prototype/frontend && npm test` -> 11 passed.
   - `cd frontend-prototype/frontend && npm run build` -> succeeded.
+
+### Frontend prototype reviewer-feedback fixes (milestone 3)
+- Addressed reviewer gap in M3 success-path testing by mocking `/api/tts` and playback dependencies in frontend unit tests:
+  - Added deterministic playback mocks (`Audio`, `URL.createObjectURL`, `URL.revokeObjectURL`) so STT + TTS can run to completion in jsdom.
+  - Updated M3 success test to assert clean completion (`state=idle`, status `Playback complete`, no error panel).
+- Added frontend test coverage requested by reviewers:
+  - STT FormData shape check (`audio` + `language`).
+  - Unsupported browser path (`MediaRecorder` unavailable).
+  - Empty STT response text mapping (`Transcription came back empty`).
+  - Explicit byte-size short-audio guard coverage.
+- Replaced fragile microtask flush (`await Promise.resolve()`) with `waitFor(...)` in delayed-stop race test.
+- Aligned frontend short-audio threshold with backend default:
+  - Updated `MIN_AUDIO_BYTES` in `frontend-prototype/frontend/src/App.svelte` from `1024` to `2048`.
+- Verification:
+  - `cd frontend-prototype/frontend && npm test` -> 15 passed.
+  - `cd frontend-prototype/frontend && npm run build` -> succeeded.
+  - `cd frontend-prototype/frontend && npm run test:e2e` -> 2 passed.
