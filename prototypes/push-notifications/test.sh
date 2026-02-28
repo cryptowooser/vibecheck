@@ -6,12 +6,18 @@ uv run python server.py >/tmp/proto-push.log 2>&1 &
 SERVER_PID=$!
 cleanup() {
   kill "$SERVER_PID" 2>/dev/null || true
+  wait "$SERVER_PID" 2>/dev/null || true
 }
-trap cleanup EXIT
+trap cleanup EXIT INT TERM
 
 READY=0
 for _ in {1..50}; do
-  if curl -sf http://localhost:8080/ >/dev/null; then
+  if ! kill -0 "$SERVER_PID" 2>/dev/null; then
+    echo "Server exited early; see /tmp/proto-push.log"
+    exit 1
+  fi
+  PROBE_RESP=$(curl -s http://localhost:8080/vapid-public-key || true)
+  if [[ "$PROBE_RESP" == *'"publicKey"'* ]]; then
     READY=1
     break
   fi
@@ -24,7 +30,7 @@ if [[ "$READY" -ne 1 ]]; then
 fi
 
 KEY=$(curl -sf http://localhost:8080/vapid-public-key)
-python3 - <<'PY' "$KEY"
+uv run python - <<'PY' "$KEY"
 import json
 import sys
 payload = json.loads(sys.argv[1])
@@ -34,7 +40,7 @@ PY
 
 DUMMY='{"endpoint":"https://example.com/push/abc123","expirationTime":null,"keys":{"p256dh":"BNc_dummy","auth":"abc_dummy"}}'
 SUB_RESP=$(curl -sf -X POST -H 'Content-Type: application/json' -d "$DUMMY" http://localhost:8080/subscribe)
-python3 - <<'PY' "$SUB_RESP"
+uv run python - <<'PY' "$SUB_RESP"
 import json
 import sys
 payload = json.loads(sys.argv[1])
@@ -43,7 +49,7 @@ print("PASS: subscribe endpoint")
 PY
 
 SEND_RESP=$(curl -sf -X POST -H 'Content-Type: application/json' -d '{"title":"test","body":"hello"}' http://localhost:8080/send-test)
-python3 - <<'PY' "$SEND_RESP"
+uv run python - <<'PY' "$SEND_RESP"
 import json
 import sys
 payload = json.loads(sys.argv[1])

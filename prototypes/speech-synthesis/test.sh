@@ -4,7 +4,7 @@ set -euo pipefail
 echo "=== Testing speech-synthesis ==="
 
 grep -q "speechSynthesis" browser-tts.html
-python3 -m py_compile elevenlabs-tts.py elevenlabs-tts-server.py
+uv run python -m py_compile elevenlabs-tts.py elevenlabs-tts-server.py
 
 echo "PASS: browser and python files are valid"
 

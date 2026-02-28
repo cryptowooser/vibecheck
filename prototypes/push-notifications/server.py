@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from base64 import urlsafe_b64encode
 from pathlib import Path
@@ -119,7 +120,8 @@ async def send_test(request: Request) -> JSONResponse:
 
     for subscription in store.subscriptions:
         try:
-            webpush(
+            await asyncio.to_thread(
+                webpush,
                 subscription_info=subscription,
                 data=json.dumps(notification),
                 vapid_private_key=store.vapid_private_key_pem,

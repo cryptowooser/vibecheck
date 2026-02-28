@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import random
+from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -11,8 +12,6 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, JSONResponse
 
 INDEX_HTML = Path(__file__).with_name("index.html")
-
-app = FastAPI(title="websocket-reconnect-prototype")
 
 
 class Hub:
@@ -37,7 +36,6 @@ class Hub:
 
 
 hub = Hub()
-random_drop_task: asyncio.Task | None = None
 
 
 def now_iso() -> str:
@@ -73,13 +71,19 @@ def make_event() -> dict:
 async def event_stream(ws: WebSocket) -> None:
     while True:
         await asyncio.sleep(2)
-        await ws.send_json(make_event())
+        try:
+            await ws.send_json(make_event())
+        except Exception:
+            return
 
 
 async def heartbeat_stream(ws: WebSocket) -> None:
     while True:
         await asyncio.sleep(30)
-        await ws.send_json({"type": "heartbeat", "timestamp": now_iso()})
+        try:
+            await ws.send_json({"type": "heartbeat", "timestamp": now_iso()})
+        except Exception:
+            return
 
 
 async def random_drop_loop() -> None:
@@ -94,19 +98,18 @@ async def random_drop_loop() -> None:
             await ws.close(code=1012, reason="random drop")
 
 
-@app.on_event("startup")
-async def startup() -> None:
-    global random_drop_task
+@contextlib.asynccontextmanager
+async def lifespan(_app) -> AsyncIterator[None]:
     random_drop_task = asyncio.create_task(random_drop_loop())
-
-
-@app.on_event("shutdown")
-async def shutdown() -> None:
-    global random_drop_task
-    if random_drop_task:
+    try:
+        yield
+    finally:
         random_drop_task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await random_drop_task
+
+
+app = FastAPI(title="websocket-reconnect-prototype", lifespan=lifespan)
 
 
 @app.get("/")
@@ -127,15 +130,17 @@ async def ws_events(ws: WebSocket) -> None:
     heartbeats = asyncio.create_task(heartbeat_stream(ws))
     try:
         while True:
-            await ws.receive_text()
+            message = await ws.receive()
+            if message["type"] == "websocket.disconnect":
+                break
     except WebSocketDisconnect:
         pass
     finally:
         sender.cancel()
         heartbeats.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
+        with contextlib.suppress(Exception):
             await sender
-        with contextlib.suppress(asyncio.CancelledError):
+        with contextlib.suppress(Exception):
             await heartbeats
         hub.unregister(ws)
 

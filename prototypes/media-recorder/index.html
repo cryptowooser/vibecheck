@@ -100,6 +100,7 @@
       let recordingStart = 0
       let timer = null
       let audioBlob = null
+      let audioUrl = null
 
       function log(message) {
         logEl.textContent += `[${new Date().toLocaleTimeString()}] ${message}\n`
@@ -152,7 +153,11 @@
           stream.getTracks().forEach((t) => t.stop())
 
           audioBlob = new Blob(chunks, { type: mimeType })
-          player.src = URL.createObjectURL(audioBlob)
+          if (audioUrl) {
+            URL.revokeObjectURL(audioUrl)
+          }
+          audioUrl = URL.createObjectURL(audioBlob)
+          player.src = audioUrl
           blobMeta.textContent = `Blob size: ${audioBlob.size} bytes (${audioBlob.type || 'unknown'})`
           uploadBtn.disabled = audioBlob.size === 0
           recordingStart = 0

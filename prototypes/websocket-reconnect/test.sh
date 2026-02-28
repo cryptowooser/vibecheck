@@ -6,12 +6,18 @@ uv run python server.py >/tmp/proto-ws-reconnect.log 2>&1 &
 SERVER_PID=$!
 cleanup() {
   kill "$SERVER_PID" 2>/dev/null || true
+  wait "$SERVER_PID" 2>/dev/null || true
 }
-trap cleanup EXIT
+trap cleanup EXIT INT TERM
 
 READY=0
 for _ in {1..50}; do
-  if curl -sf http://localhost:8080/ >/dev/null; then
+  if ! kill -0 "$SERVER_PID" 2>/dev/null; then
+    echo "Server exited early; see /tmp/proto-ws-reconnect.log"
+    exit 1
+  fi
+  DROP_RESP=$(curl -s -X POST http://localhost:8080/drop || true)
+  if [[ "$DROP_RESP" == *'"status":"ok"'* ]]; then
     READY=1
     break
   fi

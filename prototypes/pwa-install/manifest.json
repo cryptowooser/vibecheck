@@ -3,6 +3,8 @@
   "short_name": "vibecheck",
   "start_url": "/",
   "display": "standalone",
+  "theme_color": "#ff7000",
+  "background_color": "#11141f",
   "icons": [
     {
       "src": "/icons/vibe-192.png",
