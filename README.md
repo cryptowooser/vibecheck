@@ -22,6 +22,11 @@
 
 ```bash
 export MISTRAL_API_KEY=YOUR_KEY
+
+# Live attach mode (planned, WU-27): runs Vibe TUI + WebSocket bridge in same process
+vibecheck-vibe
+
+# Standalone bridge mode (no TUI, no live attach to terminal session)
 uv run python -m vibecheck
 ```
 

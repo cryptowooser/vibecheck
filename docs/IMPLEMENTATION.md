@@ -812,7 +812,7 @@ This phase implements the core product promise: run Vibe in your terminal, walk 
 - [ ] **`SessionBridge.attach_to_loop(agent_loop, vibe_runtime)`** — wire callbacks on an **existing** AgentLoop
   - Calls `agent_loop.set_approval_callback()` with bridge's approval handler
   - Calls `agent_loop.set_user_input_callback()` with bridge's input handler
-  - Sets `message_observer` on the loop for event capture
+  - `message_observer` must be passed at `AgentLoop(...)` construction time (it's a constructor param, not a public setter — `MessageList` receives it in `__init__`). The launcher (WU-27) is responsible for creating the AgentLoop with bridge's observer wired in.
   - Does NOT create a new AgentLoop (unlike `_ensure_agent_loop()`)
   - Sets `self.attach_mode = "live"`
 - [ ] **`attach_mode` field** on SessionBridge: `"live" | "replay" | "observe_only" | "managed"`
