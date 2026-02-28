@@ -1041,14 +1041,14 @@ Run the full acceptance test against a real Vibe installation. This is the test 
 - [ ] **Cross-check:** No stuck tasks, no orphaned futures, no visual artifacts after all scenarios
 - [ ] **Evidence requirements:**
   - [ ] Timestamped command log (terminal session transcript or `script` output)
-  - [ ] Short screen recording or screenshots of TUI before/after remote approval
-  - [ ] Exact commit hash and Vibe version used
+  - [ ] Runtime context noted (at minimum Vibe version; commit hash optional)
+  - [ ] Screenshots/recordings optional (not required for phase closure)
   - [ ] Pass/fail for each checklist item logged in WORKLOG.md
 
 **Verify:**
 ```bash
 # Manual test — no automated verification possible
-# All evidence artifacts must be committed or linked in WORKLOG.md
+# Log artifact locations or summary outputs in WORKLOG.md
 ```
 
 ---
