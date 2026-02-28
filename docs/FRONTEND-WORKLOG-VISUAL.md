@@ -28,6 +28,32 @@
   - `cd frontend-prototype/frontend && npm run test:secrets` -> passed
   - `cd frontend-prototype/frontend && npm run build` -> passed
 
+### Milestone 2 - reviewer remediation pass
+- Addressed review feedback in `frontend-prototype/frontend/src/App.svelte`:
+  - improved hidden file input accessibility behavior with `aria-hidden="true"` + `tabindex="-1"` and added stable `data-testid` selectors
+  - fixed cancel/empty-file handling to clear stale visual errors
+  - normalized cancel behavior:
+    - no prior valid image -> reset to `idle` with `No image selected`
+    - prior valid image -> clear transient error and keep prior valid selection/state
+  - preserved prior valid image on invalid replacement instead of clearing selection
+  - made validation errors more actionable with explicit reselect guidance (`Choose Take Photo or Upload Photo and try again.`)
+- Expanded frontend unit coverage in `frontend-prototype/frontend/src/App.test.js`:
+  - `Take Photo` / `Upload Photo` click-to-hidden-input wiring
+  - picker disabled state during `describing`
+  - empty-file (cancel) branches for idle / prior-valid / prior-error paths
+  - prior-valid preservation on invalid replacement
+- Added visual e2e smoke coverage in `frontend-prototype/frontend/e2e/mobile-smoke.spec.js`:
+  - upload + describe lifecycle + in-flight control disablement
+  - invalid replacement preserves prior valid image
+  - cancel after no-prior error resets to idle and clears stale error
+- Verification run:
+  - `cd frontend-prototype/frontend && npm test -- src/App.test.js -t "App visual milestone 2 UI extension"` -> passed
+  - `cd frontend-prototype/frontend && npm run test:e2e -- --grep "mobile visual flow"` -> passed
+  - `cd frontend-prototype/frontend && npm test` -> passed (`36` tests)
+  - `cd frontend-prototype/frontend && npm run test:e2e` -> passed (`20` tests)
+  - `cd frontend-prototype/frontend && npm run test:secrets` -> passed
+  - `cd frontend-prototype/frontend && npm run build` -> passed
+
 ### Milestone 1 - review hardening pass
 - Addressed reviewer findings in `frontend-prototype/server/server/app.py`:
   - normalized `/api/vision` upstream error mapping to stable client-safe messages (no raw provider payload passthrough)

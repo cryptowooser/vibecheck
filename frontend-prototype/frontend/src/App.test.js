@@ -1116,13 +1116,17 @@ describe('App visual milestone 2 UI extension', () => {
     expect(screen.getByRole('button', { name: 'Take Photo' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Upload Photo' })).toBeInTheDocument()
 
-    const cameraInput = screen.getByLabelText('Take Photo Input')
+    const cameraInput = screen.getByTestId('take-photo-input')
     expect(cameraInput).toHaveAttribute('accept', 'image/*')
     expect(cameraInput).toHaveAttribute('capture', 'environment')
+    expect(cameraInput).toHaveAttribute('tabindex', '-1')
+    expect(cameraInput).toHaveAttribute('aria-hidden', 'true')
 
-    const uploadInput = screen.getByLabelText('Upload Photo Input')
+    const uploadInput = screen.getByTestId('upload-photo-input')
     expect(uploadInput).toHaveAttribute('accept', 'image/*')
     expect(uploadInput).not.toHaveAttribute('capture')
+    expect(uploadInput).toHaveAttribute('tabindex', '-1')
+    expect(uploadInput).toHaveAttribute('aria-hidden', 'true')
 
     expect(screen.getByRole('button', { name: 'Describe' })).toBeDisabled()
     expect(screen.getByTestId('vision-state-pill')).toHaveTextContent('idle')
@@ -1132,7 +1136,7 @@ describe('App visual milestone 2 UI extension', () => {
   it('shows an image preview and enables Describe after selecting a valid image', async () => {
     render(App)
 
-    const uploadInput = screen.getByLabelText('Upload Photo Input')
+    const uploadInput = screen.getByTestId('upload-photo-input')
     const validFile = new File([new Uint8Array([137, 80, 78, 71])], 'sample.png', { type: 'image/png' })
 
     await fireEvent.change(uploadInput, {
@@ -1148,7 +1152,7 @@ describe('App visual milestone 2 UI extension', () => {
   it('shows validation error for unsupported image type and keeps Describe disabled', async () => {
     render(App)
 
-    const uploadInput = screen.getByLabelText('Upload Photo Input')
+    const uploadInput = screen.getByTestId('upload-photo-input')
     const invalidMimeFile = new File(['plain text'], 'notes.txt', { type: 'text/plain' })
 
     await fireEvent.change(uploadInput, {
@@ -1156,8 +1160,9 @@ describe('App visual milestone 2 UI extension', () => {
     })
 
     expect(screen.getByTestId('vision-state-pill')).toHaveTextContent('error')
+    expect(screen.getByTestId('vision-error-message')).toHaveTextContent('Unsupported file type. Use JPEG, PNG, or WEBP.')
     expect(screen.getByTestId('vision-error-message')).toHaveTextContent(
-      'Unsupported file type. Use JPEG, PNG, or WEBP.',
+      'Choose Take Photo or Upload Photo and try again.',
     )
     expect(screen.getByRole('button', { name: 'Describe' })).toBeDisabled()
   })
@@ -1165,7 +1170,7 @@ describe('App visual milestone 2 UI extension', () => {
   it('shows validation error for oversized image files', async () => {
     render(App)
 
-    const uploadInput = screen.getByLabelText('Upload Photo Input')
+    const uploadInput = screen.getByTestId('upload-photo-input')
     const oversizedBytes = new Uint8Array(10 * 1024 * 1024 + 64)
     const oversizedFile = new File([oversizedBytes], 'large-photo.jpg', { type: 'image/jpeg' })
 
@@ -1175,6 +1180,9 @@ describe('App visual milestone 2 UI extension', () => {
 
     expect(screen.getByTestId('vision-state-pill')).toHaveTextContent('error')
     expect(screen.getByTestId('vision-error-message')).toHaveTextContent('Image exceeds 10MB limit.')
+    expect(screen.getByTestId('vision-error-message')).toHaveTextContent(
+      'Choose Take Photo or Upload Photo and try again.',
+    )
     expect(screen.getByRole('button', { name: 'Describe' })).toBeDisabled()
   })
 
@@ -1182,7 +1190,7 @@ describe('App visual milestone 2 UI extension', () => {
     vi.useFakeTimers()
     render(App)
 
-    const uploadInput = screen.getByLabelText('Upload Photo Input')
+    const uploadInput = screen.getByTestId('upload-photo-input')
     const validFile = new File([new Uint8Array([255, 216, 255, 224])], 'camera.jpg', { type: 'image/jpeg' })
 
     await fireEvent.change(uploadInput, {
@@ -1198,6 +1206,113 @@ describe('App visual milestone 2 UI extension', () => {
     expect(screen.getByTestId('vision-state-pill')).toHaveTextContent('described')
     expect(screen.getByTestId('vision-status-message')).toHaveTextContent('Description ready')
     expect(screen.getByText('Vision describe preview is ready. API wiring lands in Milestone 3.')).toBeInTheDocument()
+  })
+
+  it('wires Take Photo and Upload Photo button clicks to the hidden input click handlers', async () => {
+    render(App)
+
+    const takePhotoInput = screen.getByTestId('take-photo-input')
+    const uploadPhotoInput = screen.getByTestId('upload-photo-input')
+    const takeClickSpy = vi.spyOn(takePhotoInput, 'click')
+    const uploadClickSpy = vi.spyOn(uploadPhotoInput, 'click')
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Take Photo' }))
+    await fireEvent.click(screen.getByRole('button', { name: 'Upload Photo' }))
+
+    expect(takeClickSpy).toHaveBeenCalledTimes(1)
+    expect(uploadClickSpy).toHaveBeenCalledTimes(1)
+  })
+
+  it('disables picker buttons while visual describe is in progress', async () => {
+    vi.useFakeTimers()
+    render(App)
+
+    const uploadInput = screen.getByTestId('upload-photo-input')
+    const validFile = new File([new Uint8Array([255, 216, 255, 224])], 'camera.jpg', { type: 'image/jpeg' })
+    await fireEvent.change(uploadInput, {
+      target: { files: [validFile] },
+    })
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Describe' }))
+
+    expect(screen.getByRole('button', { name: 'Take Photo' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Upload Photo' })).toBeDisabled()
+
+    await vi.advanceTimersByTimeAsync(450)
+    expect(screen.getByRole('button', { name: 'Take Photo' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Upload Photo' })).toBeEnabled()
+  })
+
+  it('keeps prior valid image selected when an invalid replacement is chosen', async () => {
+    render(App)
+
+    const uploadInput = screen.getByTestId('upload-photo-input')
+    const validFile = new File([new Uint8Array([137, 80, 78, 71])], 'sample.png', { type: 'image/png' })
+    const invalidMimeFile = new File(['plain text'], 'notes.txt', { type: 'text/plain' })
+
+    await fireEvent.change(uploadInput, {
+      target: { files: [validFile] },
+    })
+    await fireEvent.change(uploadInput, {
+      target: { files: [invalidMimeFile] },
+    })
+
+    expect(screen.getByTestId('vision-state-pill')).toHaveTextContent('error')
+    expect(screen.getByTestId('vision-error-message')).toHaveTextContent('Unsupported file type. Use JPEG, PNG, or WEBP.')
+    expect(screen.getByText('sample.png')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Describe' })).toBeEnabled()
+  })
+
+  it('handles empty file selection for idle, prior-valid, and prior-error paths', async () => {
+    render(App)
+
+    const uploadInput = screen.getByTestId('upload-photo-input')
+
+    await fireEvent.change(uploadInput, {
+      target: { files: [] },
+    })
+    expect(screen.getByTestId('vision-state-pill')).toHaveTextContent('idle')
+    expect(screen.getByTestId('vision-status-message')).toHaveTextContent('No image selected')
+    expect(screen.queryByTestId('vision-error-message')).not.toBeInTheDocument()
+
+    const initialInvalidMimeFile = new File(['plain text'], 'bad-first.txt', { type: 'text/plain' })
+    await fireEvent.change(uploadInput, {
+      target: { files: [initialInvalidMimeFile] },
+    })
+    expect(screen.getByTestId('vision-state-pill')).toHaveTextContent('error')
+    expect(screen.getByTestId('vision-error-message')).toBeInTheDocument()
+
+    await fireEvent.change(uploadInput, {
+      target: { files: [] },
+    })
+    expect(screen.getByTestId('vision-state-pill')).toHaveTextContent('idle')
+    expect(screen.getByTestId('vision-status-message')).toHaveTextContent('No image selected')
+    expect(screen.queryByTestId('vision-error-message')).not.toBeInTheDocument()
+
+    const validFile = new File([new Uint8Array([137, 80, 78, 71])], 'sample.png', { type: 'image/png' })
+    await fireEvent.change(uploadInput, {
+      target: { files: [validFile] },
+    })
+    await fireEvent.change(uploadInput, {
+      target: { files: [] },
+    })
+
+    expect(screen.getByTestId('vision-state-pill')).toHaveTextContent('image_selected')
+    expect(screen.getByText('sample.png')).toBeInTheDocument()
+
+    const invalidMimeFile = new File(['plain text'], 'notes.txt', { type: 'text/plain' })
+    await fireEvent.change(uploadInput, {
+      target: { files: [invalidMimeFile] },
+    })
+    expect(screen.getByTestId('vision-state-pill')).toHaveTextContent('error')
+    expect(screen.getByTestId('vision-error-message')).toBeInTheDocument()
+
+    await fireEvent.change(uploadInput, {
+      target: { files: [] },
+    })
+    expect(screen.getByTestId('vision-state-pill')).toHaveTextContent('image_selected')
+    expect(screen.getByText('sample.png')).toBeInTheDocument()
+    expect(screen.queryByTestId('vision-error-message')).not.toBeInTheDocument()
   })
 })
 

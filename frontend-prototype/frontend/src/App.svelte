@@ -291,7 +291,7 @@
 
   function setVisionError(message) {
     visionState = VISION_STATE_ERROR
-    visionErrorMessage = message
+    visionErrorMessage = `${message} Choose Take Photo or Upload Photo and try again.`
     visionStatusMessage = message
     visionDescription = ''
   }
@@ -304,13 +304,22 @@
     }
 
     if (!imageFile) {
+      visionErrorMessage = ''
       if (!selectedImageFile) {
         visionState = VISION_STATE_IDLE
         visionStatusMessage = 'No image selected'
+        visionDescription = ''
+        return
+      }
+
+      if (visionState === VISION_STATE_ERROR) {
+        visionState = VISION_STATE_IMAGE_SELECTED
+        visionStatusMessage = 'Image selected. Tap Describe.'
       }
       return
     }
 
+    const hadSelectedImage = Boolean(selectedImageFile)
     visionRequestCounter += 1
     clearVisionDescribeTimer()
     visionErrorMessage = ''
@@ -318,7 +327,9 @@
 
     const validationError = validateImageFile(imageFile)
     if (validationError) {
-      resetVisionSelection()
+      if (!hadSelectedImage) {
+        resetVisionSelection()
+      }
       setVisionError(validationError)
       return
     }
@@ -326,7 +337,9 @@
     try {
       await assignSelectedImage(imageFile)
     } catch {
-      resetVisionSelection()
+      if (!hadSelectedImage) {
+        resetVisionSelection()
+      }
       setVisionError('Could not preview image. Try a different photo.')
       return
     }
@@ -673,7 +686,9 @@
       type="file"
       accept="image/*"
       capture="environment"
-      aria-label="Take Photo Input"
+      data-testid="take-photo-input"
+      aria-hidden="true"
+      tabindex="-1"
       onchange={handleImageInput}
     />
     <input
@@ -681,7 +696,9 @@
       bind:this={uploadPhotoInputElement}
       type="file"
       accept="image/*"
-      aria-label="Upload Photo Input"
+      data-testid="upload-photo-input"
+      aria-hidden="true"
+      tabindex="-1"
       onchange={handleImageInput}
     />
 

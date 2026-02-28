@@ -130,6 +130,79 @@ test('mobile UI falls back to built-in voices when /api/voices fails', async ({ 
   ])
 })
 
+test('mobile visual flow supports upload, describe lifecycle, and in-flight button disablement', async ({ page }) => {
+  await stubVoices(page)
+  await page.goto('/')
+
+  await page.getByTestId('upload-photo-input').setInputFiles({
+    name: 'scene.png',
+    mimeType: 'image/png',
+    buffer: Buffer.from([137, 80, 78, 71]),
+  })
+
+  await expect(page.getByText('scene.png')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Describe', exact: true })).toBeEnabled()
+
+  await page.getByRole('button', { name: 'Describe', exact: true }).click()
+
+  await expect(page.getByTestId('vision-state-pill')).toHaveText('describing')
+  await expect(page.getByRole('button', { name: 'Take Photo', exact: true })).toBeDisabled()
+  await expect(page.getByRole('button', { name: 'Upload Photo', exact: true })).toBeDisabled()
+
+  await expect(page.getByTestId('vision-state-pill')).toHaveText('described')
+  await expect(page.getByTestId('vision-status-message')).toHaveText('Description ready')
+  await expect(page.getByText('Vision describe preview is ready. API wiring lands in Milestone 3.')).toBeVisible()
+})
+
+test('mobile visual flow keeps prior valid image after invalid replacement and clears stale error on cancel', async ({ page }) => {
+  await stubVoices(page)
+  await page.goto('/')
+
+  const uploadInput = page.getByTestId('upload-photo-input')
+
+  await uploadInput.setInputFiles({
+    name: 'sample.png',
+    mimeType: 'image/png',
+    buffer: Buffer.from([137, 80, 78, 71]),
+  })
+
+  await uploadInput.setInputFiles({
+    name: 'notes.txt',
+    mimeType: 'text/plain',
+    buffer: Buffer.from('plain text'),
+  })
+
+  await expect(page.getByTestId('vision-error-message')).toContainText('Unsupported file type. Use JPEG, PNG, or WEBP.')
+  await expect(page.getByText('sample.png')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Describe', exact: true })).toBeEnabled()
+
+  await uploadInput.setInputFiles([])
+
+  await expect(page.getByTestId('vision-state-pill')).toHaveText('image_selected')
+  await expect(page.getByText('sample.png')).toBeVisible()
+  await expect(page.getByTestId('vision-error-message')).toHaveCount(0)
+})
+
+test('mobile visual flow resets to idle when canceling after an error with no prior valid image', async ({ page }) => {
+  await stubVoices(page)
+  await page.goto('/')
+
+  const uploadInput = page.getByTestId('upload-photo-input')
+  await uploadInput.setInputFiles({
+    name: 'bad-first.txt',
+    mimeType: 'text/plain',
+    buffer: Buffer.from('plain text'),
+  })
+
+  await expect(page.getByTestId('vision-state-pill')).toHaveText('error')
+  await expect(page.getByTestId('vision-error-message')).toBeVisible()
+
+  await uploadInput.setInputFiles([])
+  await expect(page.getByTestId('vision-state-pill')).toHaveText('idle')
+  await expect(page.getByTestId('vision-status-message')).toHaveText('No image selected')
+  await expect(page.getByTestId('vision-error-message')).toHaveCount(0)
+})
+
 test('mobile voice loop runs STT to TTS playback with selected voice', async ({ page }) => {
   await installVoiceLoopBrowserMocks(page)
   await stubVoices(page)

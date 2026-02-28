@@ -411,3 +411,28 @@
   - `cd frontend-prototype/frontend && npm run test:e2e` -> passed
   - `cd frontend-prototype/frontend && npm run test:secrets` -> passed
   - `cd frontend-prototype/frontend && npm run build` -> passed
+
+### Frontend prototype visual Milestone 2 reviewer remediation
+- Patched `frontend-prototype/frontend/src/App.svelte` to address review gaps:
+  - hidden file inputs are now marked `aria-hidden="true"` and `tabindex="-1"` to avoid confusing keyboard/screen-reader exposure
+  - added stable `data-testid` selectors for visual input plumbing tests
+  - cancel/empty-file path now clears stale visual errors
+  - invalid replacement keeps the prior valid selection instead of clearing it
+  - no-prior-error cancel path returns to clean idle state (`No image selected`)
+  - validation errors now include explicit recovery guidance to use Take/Upload buttons
+- Expanded unit coverage in `frontend-prototype/frontend/src/App.test.js`:
+  - take/upload button click wiring to hidden inputs
+  - picker disablement during visual `describing`
+  - empty-file branches and stale-error cleanup
+  - prior-valid retention after invalid replacement
+- Added visual e2e smoke tests in `frontend-prototype/frontend/e2e/mobile-smoke.spec.js` for:
+  - upload + describe lifecycle and in-flight disablement
+  - invalid replacement retention behavior
+  - idle reset on cancel after no-prior error
+- Verification:
+  - `cd frontend-prototype/frontend && npm test -- src/App.test.js -t "App visual milestone 2 UI extension"` -> passed
+  - `cd frontend-prototype/frontend && npm run test:e2e -- --grep "mobile visual flow"` -> passed
+  - `cd frontend-prototype/frontend && npm test` -> passed
+  - `cd frontend-prototype/frontend && npm run test:e2e` -> passed
+  - `cd frontend-prototype/frontend && npm run test:secrets` -> passed
+  - `cd frontend-prototype/frontend && npm run build` -> passed
