@@ -69,6 +69,7 @@ describe('App milestone 2 state preview', () => {
   it('stops active recording when preview state is changed', async () => {
     const stopTrack = vi.fn()
     const mockStream = { getTracks: () => [{ stop: stopTrack }] }
+    const originalMediaDevices = Object.getOwnPropertyDescriptor(navigator, 'mediaDevices')
 
     class MockMediaRecorder {
       static stopCalls = 0
@@ -97,22 +98,103 @@ describe('App milestone 2 state preview', () => {
       }
     }
 
-    Object.defineProperty(navigator, 'mediaDevices', {
-      configurable: true,
-      value: { getUserMedia: vi.fn().mockResolvedValue(mockStream) },
-    })
-    vi.stubGlobal('MediaRecorder', MockMediaRecorder)
-    window.MediaRecorder = MockMediaRecorder
+    try {
+      Object.defineProperty(navigator, 'mediaDevices', {
+        configurable: true,
+        value: { getUserMedia: vi.fn().mockResolvedValue(mockStream) },
+      })
+      vi.stubGlobal('MediaRecorder', MockMediaRecorder)
+      window.MediaRecorder = MockMediaRecorder
 
-    render(App)
+      render(App)
 
-    await fireEvent.click(screen.getByRole('button', { name: 'Record' }))
-    expect(screen.getByRole('button', { name: 'Stop' })).toBeInTheDocument()
+      await fireEvent.click(screen.getByRole('button', { name: 'Record' }))
+      expect(screen.getByRole('button', { name: 'Stop' })).toBeInTheDocument()
 
-    await fireEvent.click(screen.getByRole('button', { name: 'idle' }))
+      await fireEvent.click(screen.getByRole('button', { name: 'idle' }))
 
-    expect(MockMediaRecorder.stopCalls).toBe(1)
-    expect(stopTrack).toHaveBeenCalledTimes(1)
-    expect(fetchMock).not.toHaveBeenCalledWith('/api/stt', expect.anything())
+      expect(MockMediaRecorder.stopCalls).toBe(1)
+      expect(stopTrack).toHaveBeenCalledTimes(1)
+      expect(fetchMock).not.toHaveBeenCalledWith('/api/stt', expect.anything())
+    } finally {
+      if (originalMediaDevices) {
+        Object.defineProperty(navigator, 'mediaDevices', originalMediaDevices)
+      } else {
+        Reflect.deleteProperty(navigator, 'mediaDevices')
+      }
+    }
+  })
+
+  it('does not stop a new recording when a previous preview-canceled recorder finishes', async () => {
+    const stopTrackOne = vi.fn()
+    const stopTrackTwo = vi.fn()
+    const streamOne = { getTracks: () => [{ stop: stopTrackOne }] }
+    const streamTwo = { getTracks: () => [{ stop: stopTrackTwo }] }
+    const originalMediaDevices = Object.getOwnPropertyDescriptor(navigator, 'mediaDevices')
+
+    class AsyncStopMediaRecorder {
+      static stopQueue = []
+
+      static isTypeSupported() {
+        return true
+      }
+
+      static flushOneStop() {
+        const callback = AsyncStopMediaRecorder.stopQueue.shift()
+        if (callback) {
+          callback()
+        }
+      }
+
+      constructor() {
+        this.state = 'inactive'
+        this.mimeType = 'audio/webm'
+        this.ondataavailable = null
+        this.onerror = null
+        this.onstop = null
+      }
+
+      start() {
+        this.state = 'recording'
+      }
+
+      stop() {
+        this.state = 'inactive'
+        AsyncStopMediaRecorder.stopQueue.push(() => {
+          if (this.onstop) {
+            this.onstop()
+          }
+        })
+      }
+    }
+
+    try {
+      const getUserMedia = vi.fn().mockResolvedValueOnce(streamOne).mockResolvedValueOnce(streamTwo)
+      Object.defineProperty(navigator, 'mediaDevices', {
+        configurable: true,
+        value: { getUserMedia },
+      })
+      vi.stubGlobal('MediaRecorder', AsyncStopMediaRecorder)
+      window.MediaRecorder = AsyncStopMediaRecorder
+
+      render(App)
+
+      await fireEvent.click(screen.getByRole('button', { name: 'Record' }))
+      await fireEvent.click(screen.getByRole('button', { name: 'idle' }))
+      await fireEvent.click(screen.getByRole('button', { name: 'Record' }))
+
+      expect(screen.getByRole('button', { name: 'Stop' })).toBeInTheDocument()
+      AsyncStopMediaRecorder.flushOneStop()
+
+      expect(stopTrackOne).toHaveBeenCalledTimes(1)
+      expect(stopTrackTwo).not.toHaveBeenCalled()
+      expect(screen.getByRole('button', { name: 'Stop' })).toBeInTheDocument()
+    } finally {
+      if (originalMediaDevices) {
+        Object.defineProperty(navigator, 'mediaDevices', originalMediaDevices)
+      } else {
+        Reflect.deleteProperty(navigator, 'mediaDevices')
+      }
+    }
   })
 })

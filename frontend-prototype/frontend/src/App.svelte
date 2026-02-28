@@ -13,7 +13,7 @@
     STATE_SPEAKING,
     STATE_ERROR,
   ]
-  const STATE_STATUS = {
+  const PREVIEW_STATUS = {
     [STATE_IDLE]: 'Ready',
     [STATE_RECORDING]: 'Recording preview active',
     [STATE_TRANSCRIBING]: 'Transcribing preview...',
@@ -40,22 +40,14 @@
 
   let mediaRecorder = null
   let mediaStream = null
-  let dropNextRecording = false
-  let chunks = []
-  let recordingStartedAt = 0
+  let recordingSessionCounter = 0
+  let currentRecordingSessionId = 0
+  const droppedRecordingSessionIds = new Set()
   let lastRecordingBlob = null
   let lastTtsText = ''
 
   let currentAudio = null
   let currentAudioUrl = ''
-
-  const stateLabel = {
-    [STATE_IDLE]: 'idle',
-    [STATE_RECORDING]: 'recording',
-    [STATE_TRANSCRIBING]: 'transcribing',
-    [STATE_SPEAKING]: 'speaking',
-    [STATE_ERROR]: 'error',
-  }
 
   const isRecording = () => uiState === STATE_RECORDING
   const isBusy = () => uiState === STATE_TRANSCRIBING || uiState === STATE_SPEAKING
@@ -68,14 +60,16 @@
     }
   })
 
-  function stopTracks() {
-    if (!mediaStream) {
+  function stopTracks(targetStream = mediaStream) {
+    if (!targetStream) {
       return
     }
-    for (const track of mediaStream.getTracks()) {
+    for (const track of targetStream.getTracks()) {
       track.stop()
     }
-    mediaStream = null
+    if (targetStream === mediaStream) {
+      mediaStream = null
+    }
   }
 
   function stopAudio() {
@@ -107,7 +101,7 @@
     }
 
     if (mediaRecorder?.state === 'recording') {
-      dropNextRecording = true
+      droppedRecordingSessionIds.add(currentRecordingSessionId)
       mediaRecorder.stop()
     }
 
@@ -116,7 +110,7 @@
     }
 
     uiState = state
-    statusMessage = STATE_STATUS[state]
+    statusMessage = PREVIEW_STATUS[state]
 
     if (state === STATE_ERROR) {
       errorMessage = 'Example error message for layout checks.'
@@ -180,41 +174,55 @@
       return
     }
 
-    chunks = []
-    recordingStartedAt = Date.now()
+    const recordingStartedAt = Date.now()
+    const recordingChunks = []
+    const sessionId = ++recordingSessionCounter
     const options = {}
     const mimeType = getRecorderMimeType()
     if (mimeType) {
       options.mimeType = mimeType
     }
 
-    mediaRecorder = new MediaRecorder(mediaStream, options)
-    mediaRecorder.ondataavailable = (event) => {
+    const stream = mediaStream
+    const recorder = new MediaRecorder(stream, options)
+    mediaRecorder = recorder
+    currentRecordingSessionId = sessionId
+
+    recorder.ondataavailable = (event) => {
       if (event.data.size > 0) {
-        chunks.push(event.data)
+        recordingChunks.push(event.data)
       }
     }
-    mediaRecorder.onerror = () => {
-      stopTracks()
-      mediaRecorder = null
+    recorder.onerror = () => {
+      stopTracks(stream)
+      if (mediaRecorder === recorder) {
+        mediaRecorder = null
+      }
+      if (currentRecordingSessionId === sessionId) {
+        currentRecordingSessionId = 0
+      }
       setError('stt', 'Recording failed. Please try again.')
     }
-    mediaRecorder.onstop = () => {
-      const recordedMimeType = mediaRecorder?.mimeType || 'audio/webm'
-      stopTracks()
-      mediaRecorder = null
+    recorder.onstop = () => {
+      const recordedMimeType = recorder.mimeType || 'audio/webm'
+      stopTracks(stream)
+      if (mediaRecorder === recorder) {
+        mediaRecorder = null
+      }
+      if (currentRecordingSessionId === sessionId) {
+        currentRecordingSessionId = 0
+      }
 
-      if (dropNextRecording) {
-        dropNextRecording = false
-        chunks = []
+      if (droppedRecordingSessionIds.has(sessionId)) {
+        droppedRecordingSessionIds.delete(sessionId)
         return
       }
 
-      const blob = new Blob(chunks, { type: recordedMimeType })
-      void processRecording(blob)
+      const blob = new Blob(recordingChunks, { type: recordedMimeType })
+      void processRecording(blob, Date.now() - recordingStartedAt)
     }
 
-    mediaRecorder.start(200)
+    recorder.start(200)
     uiState = STATE_RECORDING
     statusMessage = 'Recording... tap Stop when finished'
   }
@@ -228,9 +236,8 @@
     mediaRecorder.stop()
   }
 
-  async function processRecording(blob) {
-    const elapsed = Date.now() - recordingStartedAt
-    if (elapsed < MIN_RECORDING_MS || blob.size < MIN_AUDIO_BYTES) {
+  async function processRecording(blob, elapsedMs = MIN_RECORDING_MS) {
+    if (elapsedMs < MIN_RECORDING_MS || blob.size < MIN_AUDIO_BYTES) {
       setError('stt', 'Recording is too short. Hold record a bit longer.')
       return
     }
@@ -302,24 +309,20 @@
   async function playAudioBlob(audioBlob) {
     stopAudio()
     currentAudioUrl = URL.createObjectURL(audioBlob)
-    currentAudio = new Audio(currentAudioUrl)
-    currentAudio.preload = 'auto'
+    const audio = new Audio(currentAudioUrl)
+    audio.preload = 'auto'
+    currentAudio = audio
 
     await new Promise((resolve, reject) => {
-      if (!currentAudio) {
-        reject(new Error('Audio player unavailable'))
-        return
-      }
-
-      currentAudio.onended = () => {
+      audio.onended = () => {
         stopAudio()
         resolve()
       }
-      currentAudio.onerror = () => {
+      audio.onerror = () => {
         stopAudio()
         reject(new Error('Audio playback failed'))
       }
-      const playPromise = currentAudio.play()
+      const playPromise = audio.play()
       if (playPromise) {
         playPromise.catch(() => {
           stopAudio()
@@ -387,7 +390,7 @@
       </button>
     {/if}
 
-    <p class={`state-pill state-${uiState}`} data-testid="state-pill">{stateLabel[uiState]}</p>
+    <p class={`state-pill state-${uiState}`} data-testid="state-pill">{uiState}</p>
     <p class="status" role="status" aria-live="polite" data-testid="status-message">{statusMessage}</p>
   </section>
 

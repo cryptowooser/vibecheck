@@ -109,3 +109,20 @@
   - `cd frontend-prototype/frontend && npm test` -> 4 passed.
   - `cd frontend-prototype/frontend && npm run build` -> succeeded.
   - `cd frontend-prototype/frontend && npm run test:e2e` -> 2 passed (`Mobile Chrome`, `Mobile Safari`).
+
+### Frontend prototype follow-up review fixes (race + test isolation)
+- Hardened recording lifecycle in `frontend-prototype/frontend/src/App.svelte` to prevent stale `onstop` callbacks from prior recordings mutating active recorder state:
+  - Added per-recording session IDs.
+  - Switched preview-cancel tracking from single boolean to session ID set.
+  - Scoped `onstop`/`onerror` handlers to captured recorder/stream instances.
+  - Updated `stopTracks` to support targeted stream shutdown.
+- Removed unreachable `if (!currentAudio)` branch in `playAudioBlob` by using a local `audio` instance binding.
+- Simplified state pill rendering to display `uiState` directly (removed redundant state-label mapping).
+- Improved unit test isolation in `frontend-prototype/frontend/src/App.test.js` by restoring `navigator.mediaDevices` descriptors in tests that override them.
+- Added regression test for rapid re-record scenario:
+  - Start recording A -> preview-cancel A -> start recording B -> flush delayed onstop for A.
+  - Assert stream B is not stopped by A’s stale callback.
+- Verification:
+  - `cd frontend-prototype/frontend && npm test` -> 5 passed.
+  - `cd frontend-prototype/frontend && npm run build` -> succeeded.
+  - `cd frontend-prototype/frontend && npm run test:e2e` -> 2 passed.
