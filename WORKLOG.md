@@ -368,3 +368,12 @@
 - Verification:
   - `bash -n scripts/manual-test/run.sh` -> passed
   - `scripts/manual-test/run.sh --help` -> passed
+
+### WU-34 manual runner robustness: fix scenario-7 completion crash
+- Hardened `scripts/manual-test/run.sh` `build_report()` to avoid `||` inside command substitutions:
+  - `commit_hash` now falls back via explicit post-check instead of inline `||`.
+  - `vibe_version` now uses `uv run python -c` capture with explicit fallback handling.
+- This addresses the late-run shell error observed after Scenario 7 (`command substitution ... unexpected token '||'`).
+- Verification:
+  - `bash -n scripts/manual-test/run.sh` -> passed
+  - `scripts/manual-test/run.sh --help` -> passed

@@ -501,19 +501,25 @@ scenario_gap3_usability() {
 }
 
 build_report() {
-  local commit_hash vibe_version overall required_failed
-  commit_hash="$(cd "$ROOT_DIR" && git rev-parse --short HEAD 2>/dev/null || echo unknown)"
-  vibe_version="$(cd "$ROOT_DIR" && uv run python - <<'PY' 2>/dev/null || true
-import importlib.metadata as md
-items = []
-for name in ("vibe", "mistral-vibe"):
+  local commit_hash vibe_version overall required_failed version_raw
+  commit_hash="$(cd "$ROOT_DIR" && git rev-parse --short HEAD 2>/dev/null)"
+  if [[ -z "$commit_hash" ]]; then
+    commit_hash="unknown"
+  fi
+
+  vibe_version="unknown"
+  if version_raw="$(cd "$ROOT_DIR" && uv run python -c 'import importlib.metadata as md
+items=[]
+for name in ("'"'"'vibe'"'"'","'"'"'mistral-vibe'"'"'"):
     try:
         items.append(f"{name}={md.version(name)}")
     except Exception:
         pass
-print(", ".join(items) if items else "unknown")
-PY
-)"
+print(", ".join(items) if items else "unknown")' 2>/dev/null)"; then
+    if [[ -n "$version_raw" ]]; then
+      vibe_version="$version_raw"
+    fi
+  fi
   if [[ -z "$vibe_version" ]]; then
     vibe_version="unknown"
   fi
