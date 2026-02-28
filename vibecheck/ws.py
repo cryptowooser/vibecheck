@@ -44,12 +44,15 @@ class ConnectionManager:
 async def _send_heartbeats(websocket: WebSocket) -> None:
     while True:
         await asyncio.sleep(30)
-        await websocket.send_json(
-            {
-                "type": "heartbeat",
-                "ts": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
-            }
-        )
+        try:
+            await websocket.send_json(
+                {
+                    "type": "heartbeat",
+                    "ts": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+                }
+            )
+        except Exception:
+            return
 
 
 router = APIRouter()
@@ -70,11 +73,13 @@ async def events(websocket: WebSocket, session_id: str) -> None:
 
     try:
         while True:
-            await websocket.receive()
+            message = await websocket.receive()
+            if message["type"] == "websocket.disconnect":
+                break
     except WebSocketDisconnect:
         pass
     finally:
         heartbeat_task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
+        with contextlib.suppress(Exception):
             await heartbeat_task
         await manager.disconnect(websocket)
