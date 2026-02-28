@@ -73,3 +73,17 @@
 - Verification:
   - `cd frontend-prototype/frontend && npm test` -> 2 passed.
   - `cd frontend-prototype/frontend && npm run build` -> succeeded.
+
+### Frontend prototype review fixes (milestone 2 hardening)
+- Fixed preview-state safety regression in `frontend-prototype/frontend/src/App.svelte`: changing preview state now stops active `MediaRecorder` sessions and suppresses processing for intentionally dropped preview cancellations.
+- Added status accessibility announcement (`role="status"`, `aria-live="polite"`) so state/status changes are announced to assistive tech.
+- Expanded frontend tests in `frontend-prototype/frontend/src/App.test.js`:
+  - Assert per-state preview transitions update state pill + surface classes for all five states.
+  - Assert preview transition during active recording calls recorder `stop()` and stops audio tracks (prevents orphan mic capture).
+- Verification:
+  - `cd frontend-prototype/frontend && npm test` -> 4 passed.
+  - `cd frontend-prototype/frontend && npm run build` -> succeeded.
+- Mobile verification attempt:
+  - Tried Playwright mobile screenshot smoke check (`iPhone 12`, `Pixel 7`) against local Vite dev server.
+  - Blocked in current environment due missing host browser libs required by Playwright runtime (`libevent-2.1-7t64`, `libgstreamer-plugins-bad1.0-0`, `libflite1`, `libavif16`).
+  - Manual on-device iOS/Android check remains pending.

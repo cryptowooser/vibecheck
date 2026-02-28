@@ -40,6 +40,7 @@
 
   let mediaRecorder = null
   let mediaStream = null
+  let dropNextRecording = false
   let chunks = []
   let recordingStartedAt = 0
   let lastRecordingBlob = null
@@ -103,6 +104,11 @@
   function previewState(state) {
     if (!PREVIEW_STATES.includes(state)) {
       return
+    }
+
+    if (mediaRecorder?.state === 'recording') {
+      dropNextRecording = true
+      mediaRecorder.stop()
     }
 
     if (state !== STATE_SPEAKING) {
@@ -190,11 +196,21 @@
     }
     mediaRecorder.onerror = () => {
       stopTracks()
+      mediaRecorder = null
       setError('stt', 'Recording failed. Please try again.')
     }
     mediaRecorder.onstop = () => {
+      const recordedMimeType = mediaRecorder?.mimeType || 'audio/webm'
       stopTracks()
-      const blob = new Blob(chunks, { type: mediaRecorder?.mimeType || 'audio/webm' })
+      mediaRecorder = null
+
+      if (dropNextRecording) {
+        dropNextRecording = false
+        chunks = []
+        return
+      }
+
+      const blob = new Blob(chunks, { type: recordedMimeType })
       void processRecording(blob)
     }
 
@@ -372,7 +388,7 @@
     {/if}
 
     <p class={`state-pill state-${uiState}`} data-testid="state-pill">{stateLabel[uiState]}</p>
-    <p class="status" data-testid="status-message">{statusMessage}</p>
+    <p class="status" role="status" aria-live="polite" data-testid="status-message">{statusMessage}</p>
   </section>
 
   <section class="card state-preview">
