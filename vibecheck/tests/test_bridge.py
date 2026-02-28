@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 
 import pytest
+from pydantic import BaseModel, ConfigDict
 
 from vibecheck.bridge import SessionBridge, SessionManager
 from vibecheck.events import AssistantEvent
@@ -24,13 +25,9 @@ class FakeApprovalResponse:
     NO = "no"
 
 
-class FakeToolArgs:
-    def __init__(self, command: str) -> None:
-        self.command = command
-
-    def model_dump(self, mode: str = "json") -> dict[str, str]:
-        _ = mode
-        return {"command": self.command}
+class FakeToolArgs(BaseModel):
+    model_config = ConfigDict(strict=True)
+    command: str
 
 
 class FakeChoice:
@@ -137,7 +134,7 @@ class FakeAgentLoop:
                 )
             )
 
-        args = FakeToolArgs("ls -la")
+        args = FakeToolArgs(command="ls -la")
         yield FakeToolCallEvent(tool_name="bash", args=args, tool_call_id="tc-1")
         approval, _feedback = await self.approval_callback("bash", args, "tc-1")
         if approval == FakeApprovalResponse.NO:
@@ -353,5 +350,43 @@ async def test_edited_args_are_applied_to_tool_invocation(
     await run_task
     tool_results = [event for _, event in manager.events if event["type"] == "tool_result"]
     assert any('"command": "pwd"' in event["output"] for event in tool_results)
+
+    bridge.stop()
+
+
+@pytest.mark.asyncio
+async def test_invalid_edited_args_deny_execution_and_do_not_mutate_tool_args(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import vibecheck.bridge as bridge_module
+
+    runtime = bridge_module.VibeRuntime(
+        agent_loop_cls=FakeAgentLoop,
+        vibe_config_cls=FakeVibeConfig,
+        approval_yes=FakeApprovalResponse.YES,
+        approval_no=FakeApprovalResponse.NO,
+        ask_result_cls=FakeAskUserQuestionResult,
+        answer_cls=FakeAnswer,
+    )
+    monkeypatch.setattr(bridge_module, "load_vibe_runtime", lambda: runtime)
+
+    manager = RecordingConnectionManager()
+    bridge = SessionBridge("edit-args-invalid", connection_manager=manager)
+
+    run_task = asyncio.create_task(bridge.start_session("hello"))
+    await _wait_until(lambda: "tc-1" in bridge.pending_approval)
+    assert bridge.resolve_approval(
+        "tc-1",
+        approved=True,
+        edited_args={"command": {"bad": "type"}},
+    )
+
+    await run_task
+    assert bridge.pending_input == {}
+    assert bridge.state == "idle"
+
+    tool_results = [event for _, event in manager.events if event["type"] == "tool_result"]
+    assert any(event["is_error"] is True and "denied" in event["output"] for event in tool_results)
+    assert not any('"command":' in event["output"] for event in tool_results)
 
     bridge.stop()

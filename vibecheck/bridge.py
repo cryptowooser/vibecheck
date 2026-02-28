@@ -218,16 +218,6 @@ class SessionBridge:
         if not edited_args:
             return True
 
-        # Best effort for plain python argument holders used in tests/mocks.
-        applied_any = False
-        for key, value in edited_args.items():
-            if hasattr(args, key):
-                try:
-                    setattr(args, key, value)
-                    applied_any = True
-                except Exception:
-                    pass
-
         # Prefer full schema re-validation for Pydantic argument models.
         validator = getattr(args.__class__, "model_validate", None)
         dump = getattr(args, "model_dump", None)
@@ -244,9 +234,29 @@ class SessionBridge:
                                 setattr(args, key, value)
                         return True
             except Exception:
-                return applied_any
+                return False
+            return False
 
-        return applied_any
+        # Best effort for plain python argument holders used in tests/mocks.
+        existing: dict[str, object] = {}
+        for key in edited_args:
+            if not hasattr(args, key):
+                continue
+            existing[key] = getattr(args, key)
+
+        try:
+            for key, value in edited_args.items():
+                if key in existing:
+                    setattr(args, key, value)
+        except Exception:
+            for key, value in existing.items():
+                try:
+                    setattr(args, key, value)
+                except Exception:
+                    pass
+            return False
+
+        return bool(existing)
 
     async def _approval_callback(
         self, tool_name: str, args: object, tool_call_id: str
@@ -262,7 +272,8 @@ class SessionBridge:
 
         edited_args = approval.get("edited_args")
         if approval.get("approved") and isinstance(edited_args, dict):
-            self._apply_edited_args(args, edited_args)
+            if not self._apply_edited_args(args, edited_args):
+                return (no, "edited_args failed validation")
 
         feedback = None
         if edited_args is not None:
