@@ -196,3 +196,25 @@
   - `cd frontend-prototype/frontend && npm run build` -> succeeded.
   - `cd frontend-prototype/server && uv run pytest tests -v` -> 17 passed.
   - `cd frontend-prototype/frontend && npm run test:e2e` -> 2 passed (`Mobile Chrome`, `Mobile Safari`).
+
+### Frontend prototype milestone 4 reviewer-feedback hardening
+- Addressed M4 frontend test gaps and duplication in `frontend-prototype/frontend/src/App.test.js`:
+  - Switched milestone 4 tests to use shared `installPlaybackMocks()` setup/teardown via `beforeEach`/`afterEach` (removed duplicated manual `URL.createObjectURL`, `URL.revokeObjectURL`, and restore blocks).
+  - Added frontend test for `/api/tts` HTTP error mapping with detail message assertion and `Retry TTS` visibility.
+  - Added frontend test for empty-audio response path (`audioBlob.size === 0`) asserting `TTS returned empty audio`.
+  - Added regression test ensuring `Retry TTS` is hidden after a later STT failure so stale transcript text cannot be replayed.
+- Hardened milestone 4 UI behavior in `frontend-prototype/frontend/src/App.svelte`:
+  - `Retry TTS` now renders only when `lastFailedStage === 'tts'`.
+  - `retryTts()` now guards by failure stage and retries current transcript only.
+  - Removed redundant `lastTtsText` state and dead fallback path.
+  - Removed duplicate normal-path transcribing status assignment by making it conditional (still set for retry STT path).
+  - Removed ineffective `audio.preload` assignment after `new Audio(src)`.
+- Added browser-level mobile e2e coverage in `frontend-prototype/frontend/e2e/mobile-smoke.spec.js`:
+  - deterministic in-page mocks for `MediaRecorder`, `Audio`, `mediaDevices`, and `Date.now`
+  - success path coverage: `/api/stt -> /api/tts -> playback complete` with selected voice payload assertion
+  - failure/recovery coverage: `/api/tts` HTTP 502 detail surfaced, then `Retry TTS` succeeds
+- Verification:
+  - `cd frontend-prototype/frontend && npm test` -> 20 passed.
+  - `cd frontend-prototype/frontend && npm run build` -> succeeded.
+  - `cd frontend-prototype/frontend && npm run test:e2e` -> 6 passed (`Mobile Chrome`, `Mobile Safari`).
+  - `cd frontend-prototype/server && uv run pytest tests -v` -> 17 passed.

@@ -729,8 +729,17 @@ describe('App milestone 3 STT integration', () => {
 
 describe('App milestone 4 TTS integration and playback', () => {
   let fetchMock
+  let restorePlaybackMocks
+
+  beforeEach(() => {
+    restorePlaybackMocks = installPlaybackMocks()
+  })
 
   afterEach(() => {
+    if (restorePlaybackMocks) {
+      restorePlaybackMocks()
+      restorePlaybackMocks = null
+    }
     vi.unstubAllGlobals()
     vi.restoreAllMocks()
   })
@@ -759,17 +768,6 @@ describe('App milestone 4 TTS integration and playback', () => {
       return jsonResponse({ detail: 'Not found' }, 404)
     })
     vi.stubGlobal('fetch', fetchMock)
-
-    const originalCreateObjectURL = URL.createObjectURL
-    const originalRevokeObjectURL = URL.revokeObjectURL
-    Object.defineProperty(URL, 'createObjectURL', {
-      configurable: true,
-      value: vi.fn(() => 'blob:mock-audio'),
-    })
-    Object.defineProperty(URL, 'revokeObjectURL', {
-      configurable: true,
-      value: vi.fn(),
-    })
 
     class ControlledAudio {
       static instances = []
@@ -823,22 +821,80 @@ describe('App milestone 4 TTS integration and playback', () => {
       expect(screen.getByTestId('status-message')).toHaveTextContent('Playback complete')
     } finally {
       restoreMediaDevices()
-      if (originalCreateObjectURL) {
-        Object.defineProperty(URL, 'createObjectURL', {
-          configurable: true,
-          value: originalCreateObjectURL,
+    }
+  })
+
+  it('surfaces TTS HTTP error details and offers Retry TTS', async () => {
+    fetchMock = vi.fn(async (resource) => {
+      if (resource === '/api/voices') {
+        return jsonResponse({
+          voices: [{ voice_id: 'voice-one', name: 'Voice One' }],
         })
-      } else {
-        Reflect.deleteProperty(URL, 'createObjectURL')
       }
-      if (originalRevokeObjectURL) {
-        Object.defineProperty(URL, 'revokeObjectURL', {
-          configurable: true,
-          value: originalRevokeObjectURL,
+      if (resource === '/api/stt') {
+        return jsonResponse({ text: 'retry playback', language: 'en' })
+      }
+      if (resource === '/api/tts') {
+        return jsonResponse({ detail: 'TTS upstream unavailable' }, 502)
+      }
+      return jsonResponse({ detail: 'Not found' }, 404)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const restoreMediaDevices = installMediaDevices(vi.fn().mockResolvedValue({ getTracks: () => [] }))
+    installRecorderMock({ chunkBytes: 4096 })
+    installDateNowIncrementMock(400)
+
+    try {
+      render(App)
+
+      await fireEvent.click(screen.getByRole('button', { name: 'Record' }))
+      await fireEvent.click(screen.getByRole('button', { name: 'Stop' }))
+
+      expect(await screen.findByRole('heading', { name: 'Error' })).toBeInTheDocument()
+      expect(screen.getByText('TTS upstream unavailable')).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Retry TTS' })).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Retry STT' })).not.toBeInTheDocument()
+    } finally {
+      restoreMediaDevices()
+    }
+  })
+
+  it('surfaces an explicit error when /api/tts returns empty audio', async () => {
+    fetchMock = vi.fn(async (resource) => {
+      if (resource === '/api/voices') {
+        return jsonResponse({
+          voices: [{ voice_id: 'voice-one', name: 'Voice One' }],
         })
-      } else {
-        Reflect.deleteProperty(URL, 'revokeObjectURL')
       }
+      if (resource === '/api/stt') {
+        return jsonResponse({ text: 'retry playback', language: 'en' })
+      }
+      if (resource === '/api/tts') {
+        return new Response(new Uint8Array(), {
+          status: 200,
+          headers: { 'Content-Type': 'audio/mpeg' },
+        })
+      }
+      return jsonResponse({ detail: 'Not found' }, 404)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const restoreMediaDevices = installMediaDevices(vi.fn().mockResolvedValue({ getTracks: () => [] }))
+    installRecorderMock({ chunkBytes: 4096 })
+    installDateNowIncrementMock(400)
+
+    try {
+      render(App)
+
+      await fireEvent.click(screen.getByRole('button', { name: 'Record' }))
+      await fireEvent.click(screen.getByRole('button', { name: 'Stop' }))
+
+      expect(await screen.findByRole('heading', { name: 'Error' })).toBeInTheDocument()
+      expect(screen.getByText('TTS returned empty audio')).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Retry TTS' })).toBeInTheDocument()
+    } finally {
+      restoreMediaDevices()
     }
   })
 
@@ -863,17 +919,6 @@ describe('App milestone 4 TTS integration and playback', () => {
       return jsonResponse({ detail: 'Not found' }, 404)
     })
     vi.stubGlobal('fetch', fetchMock)
-
-    const originalCreateObjectURL = URL.createObjectURL
-    const originalRevokeObjectURL = URL.revokeObjectURL
-    Object.defineProperty(URL, 'createObjectURL', {
-      configurable: true,
-      value: vi.fn(() => 'blob:mock-audio'),
-    })
-    Object.defineProperty(URL, 'revokeObjectURL', {
-      configurable: true,
-      value: vi.fn(),
-    })
 
     class FlakyAudio {
       static playCalls = 0
@@ -928,22 +973,56 @@ describe('App milestone 4 TTS integration and playback', () => {
       expect(ttsAttempts).toBe(2)
     } finally {
       restoreMediaDevices()
-      if (originalCreateObjectURL) {
-        Object.defineProperty(URL, 'createObjectURL', {
-          configurable: true,
-          value: originalCreateObjectURL,
+    }
+  })
+
+  it('hides Retry TTS after a later STT failure to avoid replaying stale transcript', async () => {
+    let sttAttempts = 0
+    fetchMock = vi.fn(async (resource) => {
+      if (resource === '/api/voices') {
+        return jsonResponse({
+          voices: [{ voice_id: 'voice-one', name: 'Voice One' }],
         })
-      } else {
-        Reflect.deleteProperty(URL, 'createObjectURL')
       }
-      if (originalRevokeObjectURL) {
-        Object.defineProperty(URL, 'revokeObjectURL', {
-          configurable: true,
-          value: originalRevokeObjectURL,
+      if (resource === '/api/stt') {
+        sttAttempts += 1
+        if (sttAttempts === 1) {
+          return jsonResponse({ text: 'first transcript', language: 'en' })
+        }
+        return jsonResponse({ detail: 'upstream unavailable' }, 502)
+      }
+      if (resource === '/api/tts') {
+        return new Response(new Uint8Array([73, 68, 51]), {
+          status: 200,
+          headers: { 'Content-Type': 'audio/mpeg' },
         })
-      } else {
-        Reflect.deleteProperty(URL, 'revokeObjectURL')
       }
+      return jsonResponse({ detail: 'Not found' }, 404)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const restoreMediaDevices = installMediaDevices(vi.fn().mockResolvedValue({ getTracks: () => [] }))
+    installRecorderMock({ chunkBytes: 4096 })
+    installDateNowIncrementMock(400)
+
+    try {
+      render(App)
+
+      await fireEvent.click(screen.getByRole('button', { name: 'Record' }))
+      await fireEvent.click(screen.getByRole('button', { name: 'Stop' }))
+      await waitFor(() => {
+        expect(screen.getByTestId('state-pill')).toHaveTextContent('idle')
+      })
+      expect(screen.getByText('first transcript')).toBeInTheDocument()
+
+      await fireEvent.click(screen.getByRole('button', { name: 'Record' }))
+      await fireEvent.click(screen.getByRole('button', { name: 'Stop' }))
+
+      expect(await screen.findByRole('heading', { name: 'Error' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Retry STT' })).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Retry TTS' })).not.toBeInTheDocument()
+    } finally {
+      restoreMediaDevices()
     }
   })
 })

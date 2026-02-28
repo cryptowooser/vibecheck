@@ -44,7 +44,6 @@
   let currentRecordingSessionId = 0
   const droppedRecordingSessionIds = new Set()
   let lastRecordingBlob = null
-  let lastTtsText = ''
 
   let currentAudio = null
   let currentAudioUrl = ''
@@ -254,19 +253,20 @@
     }
 
     lastRecordingBlob = blob
-
-    try {
+    if (uiState !== STATE_TRANSCRIBING) {
       uiState = STATE_TRANSCRIBING
       statusMessage = 'Transcribing...'
+    }
+
+    try {
       transcript = await sendToStt(blob)
-      lastTtsText = transcript
     } catch (error) {
       setError('stt', error.message)
       return
     }
 
     try {
-      await runTtsPlayback(lastTtsText)
+      await runTtsPlayback(transcript)
       uiState = STATE_IDLE
       statusMessage = 'Playback complete'
       clearError()
@@ -322,7 +322,6 @@
     statusMessage = 'Speaking...'
     currentAudioUrl = URL.createObjectURL(audioBlob)
     const audio = new Audio(currentAudioUrl)
-    audio.preload = 'auto'
     currentAudio = audio
 
     await new Promise((resolve, reject) => {
@@ -353,7 +352,10 @@
   }
 
   async function retryTts() {
-    const text = (lastTtsText || transcript).trim()
+    if (lastFailedStage !== 'tts') {
+      return
+    }
+    const text = transcript.trim()
     if (!text) {
       return
     }
@@ -438,7 +440,7 @@
         {#if lastFailedStage === 'stt' && lastRecordingBlob}
           <button class="secondary" onclick={retryStt}>Retry STT</button>
         {/if}
-        {#if transcript}
+        {#if lastFailedStage === 'tts' && transcript}
           <button class="secondary" onclick={retryTts}>Retry TTS</button>
         {/if}
       </div>
