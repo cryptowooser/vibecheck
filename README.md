@@ -1209,7 +1209,7 @@ agent_loop.set_user_input_callback(bridge._user_input_callback)
 
 ```python
 BaseEvent
-├── UserMessageEvent(content, message_id)           → Show user message
+├── UserMessageEvent(content, message_id)           → User prompt event
 ├── AssistantEvent(content, stopped_by_middleware)   → Show assistant reply
 ├── ReasoningEvent(content, message_id)              → Show reasoning block
 ├── ToolCallEvent(tool_name, tool_class, args)       → Show tool invocation
@@ -1218,6 +1218,11 @@ BaseEvent
 ├── CompactStartEvent(context_tokens, threshold)     → Show compaction notice
 └── CompactEndEvent(old_tokens, new_tokens)          → Show compaction result
 ```
+
+#### Live Attach Known Limitations (Phase 3.1)
+
+- Phone-injected prompts may not render as user bubbles in the terminal TUI. Upstream Vibe's `EventHandler` intentionally no-ops on `UserMessageEvent`; the phone UI still shows the full conversation.
+- `VibeCheckApp._handle_agent_loop_turn()` delegates to `bridge.inject_message()` for queue ownership. This intentionally drops Vibe's loading widget lifecycle, Ctrl+C turn interrupt behavior, and history refresh in the terminal path.
 
 ### Vibe's Waiting States (What Triggers Notifications)
 

@@ -559,6 +559,7 @@ async def test_mobile_resolution_does_not_leave_local_pending_state_stuck() -> N
         def __init__(self) -> None:
             self._pending_approval = None
             self._pending_question = None
+            self.switch_to_input_calls = 0
 
         async def approval_callback(self, _tool: str, _args: object, _call_id: str):
             self._pending_approval = asyncio.get_running_loop().create_future()
@@ -571,6 +572,9 @@ async def test_mobile_resolution_does_not_leave_local_pending_state_stuck() -> N
             result = await self._pending_question
             self._pending_question = None
             return result
+
+        async def _switch_to_input_app(self) -> None:
+            self.switch_to_input_calls += 1
 
     owner = CancellationSensitiveOwner()
     manager = RecordingConnectionManager()
@@ -593,13 +597,17 @@ async def test_mobile_resolution_does_not_leave_local_pending_state_stuck() -> N
 
     assert bridge.inject_message("mobile first")
     await _wait_until(lambda: "tc-1" in bridge.pending_approval)
+    await _wait_until(lambda: owner._pending_approval is not None)
     assert bridge.resolve_approval("tc-1", approved=True)
     await _wait_until(lambda: owner._pending_approval is None)
+    await _wait_until(lambda: owner.switch_to_input_calls >= 1)
 
     await _wait_until(lambda: len(bridge.pending_input) == 1)
+    await _wait_until(lambda: owner._pending_question is not None)
     request_id = next(iter(bridge.pending_input.keys()))
     assert bridge.resolve_input(request_id=request_id, response="yes")
     await _wait_until(lambda: owner._pending_question is None)
+    await _wait_until(lambda: owner.switch_to_input_calls >= 2)
     await _wait_until(lambda: bridge.state == "idle")
 
 

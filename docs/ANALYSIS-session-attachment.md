@@ -197,6 +197,8 @@ Our `_settle_local_approval_state()` (bridge.py) correctly resolves layer 1 (set
 
 Same pattern applies to `_pending_question` / `on_question_app_answered`.
 
+**Status (2026-02-28):** Implemented in bridge via explicit owner UI reset hook (`_switch_to_input_app()` call from `_settle_local_approval_state` / `_settle_local_input_state`). Requires real-Vibe manual validation in WU-34.
+
 ### Gap 2 (Medium): Mobile-injected prompts invisible in terminal
 
 **The problem:** Vibe's `EventHandler.handle_event()` intentionally no-ops on `UserMessageEvent` (reference `event_handler.py:65`). This is by design: in normal Vibe, the TUI mounts the user message widget *before* calling `act()`, making the event redundant.
@@ -216,6 +218,8 @@ The terminal user sees "ghost conversations" — the agent suddenly starts worki
 
 For hackathon, option 3 is defensible. The phone is the primary control surface when the user is away from the terminal.
 
+**Status (2026-02-28):** Accepted/documented as known limitation in README (Phase 3.1 notes).
+
 ### Gap 3 (Medium): `_handle_agent_loop_turn` override drops TUI lifecycle
 
 **The problem:** Our override (launcher.py) routes terminal keyboard input to `bridge.inject_message()`, bypassing Vibe's original `_handle_agent_loop_turn` which manages:
@@ -230,6 +234,8 @@ For hackathon, option 3 is defensible. The phone is the primary control surface 
 The queue substitution for `_agent_running` is correct. The loading widget and interrupt losses are noticeable but not critical.
 
 **Fix direction:** Document what's dropped. Optionally reintroduce loading widget by mounting it before `inject_message` and unmounting via event listener when the turn completes.
+
+**Status (2026-02-28):** Documented in launcher code comments + README known limitations; loading widget parity remains optional.
 
 ### Summary
 

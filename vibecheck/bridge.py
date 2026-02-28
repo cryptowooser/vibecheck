@@ -460,6 +460,34 @@ class SessionBridge:
 
         return ""
 
+    def _reset_local_owner_ui(self, owner: object) -> None:
+        switch_to_input = getattr(owner, "_switch_to_input_app", None)
+        if not callable(switch_to_input):
+            return
+
+        try:
+            maybe_awaitable = switch_to_input()
+        except Exception:
+            logger.exception(
+                "Failed to switch local UI back to input app for session %s",
+                self.session_id,
+            )
+            return
+
+        if not inspect.isawaitable(maybe_awaitable):
+            return
+
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            close = getattr(maybe_awaitable, "close", None)
+            if callable(close):
+                close()
+            return
+
+        task = loop.create_task(maybe_awaitable)
+        self._track_task(task)
+
     def _settle_local_approval_state(self, approved: bool, edited_args: dict | None = None) -> None:
         callback = self._local_approval_callback
         owner = getattr(callback, "__self__", None)
@@ -474,6 +502,7 @@ class SessionBridge:
         if edited_args is not None:
             feedback = json.dumps(edited_args, ensure_ascii=True)
         pending.set_result((yes if approved else no, feedback))
+        self._reset_local_owner_ui(owner)
 
     def _settle_local_input_state(self, response: str) -> None:
         callback = self._local_input_callback
@@ -483,6 +512,7 @@ class SessionBridge:
             return
 
         pending.set_result(self._build_input_result(response, question_texts=[]))
+        self._reset_local_owner_ui(owner)
 
     def _on_message_observed(self, message: object) -> None:
         message_id = getattr(message, "message_id", None)

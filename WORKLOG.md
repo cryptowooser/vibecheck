@@ -260,3 +260,22 @@
   - `docs/ANALYSIS-session-attachment.md` — Added "Phase 3 Validation: Confirmed Gaps" section with full technical detail and Vibe source references
   - `docs/PLAN.md` — Added Phase 3.1 status note under L1.5 with summary of all three gaps
   - `docs/IMPLEMENTATION.md` — Inserted Phase 3.1 with WU-32 (approval UI cleanup, M), WU-33 (remote injection UX + lifecycle audit, S), WU-34 (manual validation with real Vibe, S). Updated ToC, dependency graph, WU table, key constraints, parallelism map, and Phase 5 gate dependencies.
+
+### Phase 3.1 implementation (WU-32 + WU-33 documentation pass)
+- Implemented explicit local TUI cleanup hook in `vibecheck/bridge.py`:
+  - Added `_reset_local_owner_ui(owner)` to call owner `_switch_to_input_app()` when present.
+  - Wired the cleanup into both `_settle_local_approval_state(...)` and `_settle_local_input_state(...)` after future settlement.
+  - Behavior is async-safe: awaitables are scheduled on the active loop and tracked with bridge background task management.
+- Strengthened regression coverage in `vibecheck/tests/test_bridge.py`:
+  - Extended `test_mobile_resolution_does_not_leave_local_pending_state_stuck` to assert `_switch_to_input_app()` is invoked after mobile approval/input resolution.
+  - Ensures the bridge now updates both asyncio state and local TUI mode state.
+- Documented WU-33 lifecycle/UX tradeoffs:
+  - `README.md` now includes a "Live Attach Known Limitations (Phase 3.1)" section covering:
+    - user-prompt visibility limitation for phone-injected `UserMessageEvent` in terminal TUI
+    - deliberate `_handle_agent_loop_turn` lifecycle tradeoffs (loading indicator, interrupt, history refresh)
+  - Added inline parity-tradeoff comment in `vibecheck/launcher.py` next to `_handle_agent_loop_turn`.
+- Verification:
+  - `uv run pytest vibecheck/tests/test_bridge.py::test_mobile_resolution_does_not_leave_local_pending_state_stuck -v` -> passed
+  - `uv run pytest vibecheck/tests/test_bridge.py vibecheck/tests/test_launcher.py vibecheck/tests/test_tui_bridge.py vibecheck/tests/test_live_attach.py -v` -> passed (27 tests)
+  - `uv run pytest vibecheck/tests/ -q` -> passed (62 tests)
+  - `scripts/test_live_attach.sh` -> passed

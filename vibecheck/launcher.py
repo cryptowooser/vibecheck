@@ -176,6 +176,9 @@ class VibeCheckApp(_BaseVibeApp):
             self._server = None
 
     async def _handle_agent_loop_turn(self, prompt: str) -> None:
+        # Intentional parity tradeoff: the bridge queue serializes turns, but this
+        # bypasses Vibe's native loading widget / interrupt / history refresh path.
+        # See docs/ANALYSIS-session-attachment.md (Phase 3 Validation: Gap 3).
         injected = self._bridge.inject_message(prompt)
         if injected:
             return
