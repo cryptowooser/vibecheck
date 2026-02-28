@@ -1,0 +1,8 @@
+{
+  "compilerOptions": {
+    "moduleResolution": "bundler",
+    "allowJs": true,
+    "checkJs": true
+  },
+  "exclude": ["node_modules/*", "dist/*"]
+}

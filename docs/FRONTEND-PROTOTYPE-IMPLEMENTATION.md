@@ -49,11 +49,12 @@ Exit criteria:
 - Implement `POST /api/stt` to accept multipart audio upload and return transcript JSON (Voxtral)
 - Implement `POST /api/tts` to accept text + voice_id and return `audio/mpeg`
 - Add request validation, size limits, and clear error mapping
-- Add backend tests with mocked ElevenLabs calls
+- Add backend tests with mocked STT/TTS upstream helper calls
 
 Exit criteria:
 - `GET /api/voices` returns a valid list for the dropdown
-- `POST /api/stt` and `POST /api/tts` return stubbed responses in tests
+- `POST /api/stt` returns `{"text": "...", "language": "en"}` for valid audio
+- `POST /api/tts` returns valid `audio/mpeg` (streaming or full binary)
 - `uv run pytest` for server tests passes
 
 **Milestone 2: Frontend UI Skeleton**
@@ -62,7 +63,8 @@ Exit criteria:
 - Basic styling for touch targets and safe-area spacing
 
 Exit criteria:
-- UI renders on mobile with readable controls and state transitions
+- UI renders on mobile with readable controls and correct touch target sizing
+- All five states (`idle`, `recording`, `transcribing`, `speaking`, `error`) are visually distinguishable without real API calls (e.g. hardcoded state prop or dev toggle)
 
 **Milestone 3: STT Integration**
 - Implement MediaRecorder flow with mic permission handling
@@ -77,7 +79,7 @@ Exit criteria:
 **Milestone 4: TTS Integration + Playback**
 - Send transcript + selected voice to `/api/tts`
 - Play returned `audio/mpeg` using `Audio` or `AudioContext`
-- Show speaking state and allow replay
+- Show speaking state during playback
 
 Exit criteria:
 - Transcript is spoken back in the selected voice
@@ -95,7 +97,7 @@ Exit criteria:
 
 ## Verification Checklist
 
-- Backend tests: `uv run pytest frontend-prototype/server/tests -v`
+- Backend tests: `cd frontend-prototype/server && uv run pytest tests -v`
 - Frontend build: `cd frontend-prototype/frontend && npm run build`
 - Manual mobile test on iOS Safari and Android Chrome
 

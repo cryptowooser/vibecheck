@@ -55,3 +55,12 @@
 
 ### Frontend prototype planning
 - Added `docs/FRONTEND-PROTOTYPE-IMPLEMENTATION.md` with milestone-based punchlist for the Voxtral STT + ElevenLabs TTS voice loop prototype
+
+### Frontend prototype reviewer corrections
+- Updated `frontend-prototype/server/server/app.py` to stream `/api/tts` responses back to clients instead of buffering full audio in memory.
+- Hardened STT upload handling with chunked reads and early 413 rejection when payload size exceeds `STT_MAX_UPLOAD_BYTES`.
+- Added explicit dev-intent comment for wildcard CORS in prototype backend.
+- Removed unused `mistralai` dependency from `frontend-prototype/server/pyproject.toml` and aligned lockfile.
+- Added `frontend-prototype/server/pytest.ini` and removed test-time `sys.path` mutation.
+- Expanded backend tests for voice entry shape, STT 413 branch, STT auth-error mapping, and empty TTS upstream audio branch.
+- Aligned prototype docs to implemented backend contract and corrected backend verification command to run from `frontend-prototype/server`.
