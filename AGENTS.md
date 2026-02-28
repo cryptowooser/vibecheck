@@ -2,7 +2,7 @@
 
 ## What This Is
 
-vibecheck is a mobile PWA bridge for Mistral Vibe. It hooks into Vibe's Textual/Python event system (AgentLoop callbacks) and exposes them over WebSocket to a Svelte 5 mobile client. See README.md for the full product brief, PLAN.md for the architecture, and IMPLEMENTATION.md for the work unit punchlist.
+vibecheck is a mobile PWA bridge for Mistral Vibe. It hooks into Vibe's Textual/Python event system (AgentLoop callbacks) and exposes them over WebSocket to a Svelte 5 mobile client. See README.md for the full product brief, docs/PLAN.md for the architecture, and docs/IMPLEMENTATION.md for the work unit punchlist.
 
 ## Architecture
 
@@ -27,12 +27,14 @@ Phone (PWA) → HTTPS/WSS → EC2 (Caddy → FastAPI bridge → Vibe AgentLoop)
 
 | File | Purpose |
 |------|---------|
-| `IMPLEMENTATION.md` | **Work unit punchlist — start here for tasks** |
-| `PLAN.md` | Hackathon execution plan (layers L0-L9) |
+| `docs/IMPLEMENTATION.md` | **Work unit punchlist — start here for tasks** |
+| `docs/PLAN.md` | Hackathon execution plan (layers L0-L9) |
 | `README.md` | Full product brief |
-| `DEMO.md` | Presentation script and demo setup |
+| `docs/DEMO.md` | Presentation script and demo setup |
+| `docs/ANALYSIS-vibe.md` | Vibe v2.2.1 internals (AgentLoop, events, callbacks) |
+| `docs/REMOTING-UI.md` | Mobile-to-TUI bridge architecture research |
 | `WORKLOG.md` | **Running log of all major actions** — installations, config changes, decisions, not just WU completions |
-| `scripts/` | Preflight scripts, smoke tests, event replay |
+| `scripts/` | Smoke tests, event replay |
 | `vibecheck/` | Python backend package |
 | `vibecheck/frontend/` | Svelte 5 + Vite PWA |
 | `vibecheck/tests/` | Backend pytest suite |
@@ -227,7 +229,7 @@ WU-03: proto websocket-reconnect
 
 ## Work Units
 
-See `IMPLEMENTATION.md` for the full punchlist with dependency graph, parallelism map, and verification steps for each work unit (WU-01 through WU-23).
+See `docs/IMPLEMENTATION.md` for the full punchlist with dependency graph, parallelism map, and verification steps for each work unit (WU-01 through WU-27).
 
 **Before starting a WU:**
 1. Read its entry in IMPLEMENTATION.md
@@ -259,6 +261,6 @@ Format: `### Section heading` under the current date, bullet points for details.
 - **Missing dependency:** Check if the WU you depend on is done. If not, work on something else or create a minimal stub/mock.
 - **Test failures:** Fix before proceeding. Don't skip tests.
 - **Import errors from Vibe:** Backend tests should mock Vibe internals. If you need real Vibe, coordinate with the team.
-- **Unclear requirements:** Check PLAN.md and README.md first. If still unclear, ask.
+- **Unclear requirements:** Check docs/PLAN.md and README.md first. If still unclear, ask.
 - **Build failures:** Fix immediately. Don't commit broken builds.
 - **Another agent broke something:** If their change broke your tests, flag it. Don't silently fix their code.
