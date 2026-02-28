@@ -42,6 +42,30 @@ def test_get_voices_returns_static_list(client: TestClient) -> None:
     assert all('voice_id' in voice and 'name' in voice for voice in payload['voices'])
 
 
+def test_get_voices_includes_requested_japanese_names(client: TestClient) -> None:
+    response = client.get('/api/voices')
+
+    assert response.status_code == 200
+    names = {voice['name'] for voice in response.json()['voices']}
+    assert {'Kuon', 'Hinata', 'Otani'}.issubset(names)
+
+
+def test_get_voices_includes_language_tags(client: TestClient) -> None:
+    response = client.get('/api/voices')
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert all(voice.get('language') in {'EN', 'JP'} for voice in payload['voices'])
+
+    language_by_name = {voice['name']: voice['language'] for voice in payload['voices']}
+    assert language_by_name['George'] == 'EN'
+    assert language_by_name['Bella'] == 'EN'
+    assert language_by_name['Adam'] == 'EN'
+    assert language_by_name['Kuon'] == 'JP'
+    assert language_by_name['Hinata'] == 'JP'
+    assert language_by_name['Otani'] == 'JP'
+
+
 def test_stt_missing_audio_returns_422(client: TestClient) -> None:
     response = client.post('/api/stt', data={'language': 'en'})
 

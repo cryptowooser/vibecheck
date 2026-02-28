@@ -171,6 +171,26 @@ describe('App milestone 2 state preview', () => {
     expect(await screen.findByText('Voice One')).toBeInTheDocument()
   })
 
+  it('renders language tags in voice labels when provided by the API', async () => {
+    fetchMock = vi.fn(async (resource) => {
+      if (resource === '/api/voices') {
+        return jsonResponse({
+          voices: [
+            { voice_id: 'voice-one', name: 'Voice One', language: 'EN' },
+            { voice_id: 'voice-two', name: 'Voice Two', language: 'JP' },
+          ],
+        })
+      }
+      return jsonResponse({ detail: 'Not found' }, 404)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(App)
+
+    expect(await screen.findByRole('option', { name: 'Voice One (EN)' })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: 'Voice Two (JP)' })).toBeInTheDocument()
+  })
+
   it('switches to error state preview without API calls', async () => {
     render(App)
 

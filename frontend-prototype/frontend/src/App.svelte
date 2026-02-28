@@ -24,9 +24,12 @@
   const MIN_RECORDING_MS = 350
   const MIN_AUDIO_BYTES = 2048
   const FALLBACK_VOICES = [
-    { voice_id: 'JBFqnCBsd6RMkjVDRZzb', name: 'George' },
-    { voice_id: 'EXAVITQu4vr4xnSDxMaL', name: 'Bella' },
-    { voice_id: 'pNInz6obpgDQGcFmaJgB', name: 'Adam' },
+    { voice_id: 'JBFqnCBsd6RMkjVDRZzb', name: 'George', language: 'EN' },
+    { voice_id: 'EXAVITQu4vr4xnSDxMaL', name: 'Bella', language: 'EN' },
+    { voice_id: 'pNInz6obpgDQGcFmaJgB', name: 'Adam', language: 'EN' },
+    { voice_id: 'B8gJV1IhpuegLxdpXFOE', name: 'Kuon', language: 'JP' },
+    { voice_id: 'j210dv0vWm7fCknyQpbA', name: 'Hinata', language: 'JP' },
+    { voice_id: '3JDquces8E8bkmvbh6Bc', name: 'Otani', language: 'JP' },
   ]
 
   let uiState = STATE_IDLE
@@ -176,6 +179,14 @@
     if (!selectedVoiceId && voices.length > 0) {
       selectedVoiceId = voices[0].voice_id
     }
+  }
+
+  function formatVoiceLabel(voice) {
+    const language = typeof voice.language === 'string' ? voice.language.trim().toUpperCase() : ''
+    if (!language) {
+      return voice.name
+    }
+    return `${voice.name} (${language})`
   }
 
   async function startRecording() {
@@ -440,7 +451,7 @@
       disabled={isRecording() || isBusy() || requestInFlight || micPermissionInFlight}
     >
       {#each voices as voice}
-        <option value={voice.voice_id}>{voice.name}</option>
+        <option value={voice.voice_id}>{formatVoiceLabel(voice)}</option>
       {/each}
     </select>
 

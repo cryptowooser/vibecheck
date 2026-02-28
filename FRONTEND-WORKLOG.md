@@ -263,3 +263,20 @@
   - `cd frontend-prototype/frontend && npm test` -> 26 passed.
   - `cd frontend-prototype/frontend && npm run build` -> succeeded.
   - `cd frontend-prototype/frontend && npm run test:e2e` -> 14 passed (`Mobile Chrome`, `Mobile Safari`).
+
+### Frontend prototype voice dropdown expansion (JP voices + language tags)
+- Added Japanese voices requested for the prototype dropdown:
+  - `Kuon` (`B8gJV1IhpuegLxdpXFOE`)
+  - `Hinata` (`j210dv0vWm7fCknyQpbA`)
+  - `Otani` (`3JDquces8E8bkmvbh6Bc`)
+- Updated backend static voice list in `frontend-prototype/server/server/app.py` to include per-voice `language` metadata (`EN`/`JP`).
+- Updated frontend fallback voice list in `frontend-prototype/frontend/src/App.svelte` to match backend voice set and IDs.
+- Updated dropdown rendering in `App.svelte` to display `Name (LANG)` labels when language metadata is present.
+- Added tests:
+  - backend: presence of requested JP names and language-tag metadata (`frontend-prototype/server/tests/test_api.py`)
+  - frontend unit: language-tag rendering in voice options (`frontend-prototype/frontend/src/App.test.js`)
+  - frontend e2e: fallback voice list now expects 6 tagged options (`frontend-prototype/frontend/e2e/mobile-smoke.spec.js`)
+- Verification:
+  - `cd frontend-prototype/server && uv run pytest tests -v` -> 20 passed.
+  - `cd frontend-prototype/frontend && npm test` -> 27 passed.
+  - `cd frontend-prototype/frontend && npm run test:e2e` -> 14 passed.

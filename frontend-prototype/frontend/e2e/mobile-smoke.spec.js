@@ -119,8 +119,15 @@ test('mobile UI falls back to built-in voices when /api/voices fails', async ({ 
   await page.goto('/')
 
   await expect(page.getByRole('combobox', { name: 'Voice' })).toBeVisible()
-  await expect(page.locator('#voice-select option')).toHaveCount(3)
-  await expect(page.locator('#voice-select option')).toHaveText(['George', 'Bella', 'Adam'])
+  await expect(page.locator('#voice-select option')).toHaveCount(6)
+  await expect(page.locator('#voice-select option')).toHaveText([
+    'George (EN)',
+    'Bella (EN)',
+    'Adam (EN)',
+    'Kuon (JP)',
+    'Hinata (JP)',
+    'Otani (JP)',
+  ])
 })
 
 test('mobile voice loop runs STT to TTS playback with selected voice', async ({ page }) => {

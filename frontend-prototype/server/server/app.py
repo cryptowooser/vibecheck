@@ -28,9 +28,12 @@ UPLOAD_READ_CHUNK_SIZE = 1024 * 256
 logger = logging.getLogger(__name__)
 
 DEFAULT_VOICES = [
-    {"voice_id": "JBFqnCBsd6RMkjVDRZzb", "name": "George"},
-    {"voice_id": "EXAVITQu4vr4xnSDxMaL", "name": "Bella"},
-    {"voice_id": "pNInz6obpgDQGcFmaJgB", "name": "Adam"},
+    {"voice_id": "JBFqnCBsd6RMkjVDRZzb", "name": "George", "language": "EN"},
+    {"voice_id": "EXAVITQu4vr4xnSDxMaL", "name": "Bella", "language": "EN"},
+    {"voice_id": "pNInz6obpgDQGcFmaJgB", "name": "Adam", "language": "EN"},
+    {"voice_id": "B8gJV1IhpuegLxdpXFOE", "name": "Kuon", "language": "JP"},
+    {"voice_id": "j210dv0vWm7fCknyQpbA", "name": "Hinata", "language": "JP"},
+    {"voice_id": "3JDquces8E8bkmvbh6Bc", "name": "Otani", "language": "JP"},
 ]
 
 
