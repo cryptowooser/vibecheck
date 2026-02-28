@@ -88,10 +88,20 @@ def _map_vision_error(error: UpstreamAPIError) -> HTTPException:
         return HTTPException(status_code=429, detail="Vision rate limited")
     if error.status_code in {401, 403}:
         return HTTPException(status_code=502, detail="Vision authentication with Mistral failed")
-    detail = error.detail.strip()
-    if detail:
-        return HTTPException(status_code=502, detail=detail)
-    return HTTPException(status_code=502, detail="Vision upstream unavailable")
+    if error.status_code >= 500:
+        return HTTPException(status_code=502, detail="Vision upstream unavailable")
+    return HTTPException(status_code=502, detail="Vision upstream request failed")
+
+
+def _parse_positive_int_env(name: str, default: int) -> int:
+    raw_value = os.environ.get(name, str(default))
+    try:
+        value = int(raw_value)
+    except ValueError as error:
+        raise HTTPException(status_code=500, detail=f"{name} must be an integer") from error
+    if value <= 0:
+        raise HTTPException(status_code=500, detail=f"{name} must be greater than 0")
+    return value
 
 
 async def transcribe_audio(
@@ -177,6 +187,8 @@ async def describe_image(*, api_key: str, image_bytes: bytes, mime_type: str) ->
             {
                 "role": "user",
                 "content": [
+                    # Mistral OpenAPI currently accepts image_url as either a string data URI
+                    # or an object with {"url": ...}; we intentionally use the string form.
                     {"type": "image_url", "image_url": f"data:{mime_type};base64,{encoded_image}"},
                     {"type": "text", "text": DEFAULT_VISION_PROMPT},
                 ],
@@ -339,20 +351,20 @@ async def vision(image: UploadFile | None = File(None)) -> dict[str, str]:
     if image is None:
         raise HTTPException(status_code=400, detail="Image file is required")
 
-    api_key = os.environ.get("MISTRAL_API_KEY")
-    if not api_key:
-        raise HTTPException(status_code=500, detail="MISTRAL_API_KEY is not set")
-
     content_type = (image.content_type or "").split(";", maxsplit=1)[0].strip().lower()
     if content_type not in VISION_ALLOWED_MIME_TYPES:
         allowed = ", ".join(sorted(VISION_ALLOWED_MIME_TYPES))
         raise HTTPException(status_code=415, detail=f"Unsupported image MIME type. Allowed types: {allowed}")
 
-    max_upload_bytes = int(os.environ.get("VISION_MAX_UPLOAD_BYTES", str(DEFAULT_VISION_MAX_UPLOAD_BYTES)))
+    max_upload_bytes = _parse_positive_int_env("VISION_MAX_UPLOAD_BYTES", DEFAULT_VISION_MAX_UPLOAD_BYTES)
 
     image_bytes = await read_upload_with_limit(image, max_upload_bytes, too_large_detail="Image file is too large")
     if not image_bytes:
         raise HTTPException(status_code=400, detail="Image file is empty")
+
+    api_key = os.environ.get("MISTRAL_API_KEY")
+    if not api_key:
+        raise HTTPException(status_code=500, detail="MISTRAL_API_KEY is not set")
 
     try:
         text = await describe_image(api_key=api_key, image_bytes=image_bytes, mime_type=content_type)

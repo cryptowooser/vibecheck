@@ -2,6 +2,24 @@
 
 ## 2026-02-28
 
+### Milestone 1 - review hardening pass
+- Addressed reviewer findings in `frontend-prototype/server/server/app.py`:
+  - normalized `/api/vision` upstream error mapping to stable client-safe messages (no raw provider payload passthrough)
+  - added guarded parsing for `VISION_MAX_UPLOAD_BYTES` with explicit JSON `500` detail on invalid values
+  - reordered `/api/vision` validation flow so MIME/size payload checks run before API-key check
+  - added inline maintainer note on `image_url` format compatibility (Mistral accepts both string data URI and object form)
+- Expanded `frontend-prototype/server/tests/test_api.py` coverage:
+  - empty image payload branch (`400`)
+  - invalid `VISION_MAX_UPLOAD_BYTES` handling (`500` with detail)
+  - MIME-before-size ordering regression (`415` precedence)
+  - payload-validation-before-api-key ordering regression (`415` even when key is missing)
+  - no raw-detail leakage assertions for upstream `4xx` and `5xx` failures
+  - `describe_image` parser branches: invalid JSON, missing choices, malformed choice, malformed message
+- Removed redundant env setup from missing-image test.
+- Verification run:
+  - `cd frontend-prototype/server && uv run pytest tests/test_api.py -q` -> `42 passed`
+  - `cd frontend-prototype/server && uv run pytest tests/ -v` -> `42 passed`
+
 ### Milestone 1 - backend `/api/vision` implementation
 - Added `POST /api/vision` in `frontend-prototype/server/server/app.py` using optional `image: UploadFile | None = File(None)` and explicit `400` for missing image.
 - Added server-side MIME allowlist validation (`image/jpeg`, `image/png`, `image/webp`) before reading upload bytes.
