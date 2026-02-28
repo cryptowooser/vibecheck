@@ -126,3 +126,17 @@
   - `cd frontend-prototype/frontend && npm test` -> 5 passed.
   - `cd frontend-prototype/frontend && npm run build` -> succeeded.
   - `cd frontend-prototype/frontend && npm run test:e2e` -> 2 passed.
+
+### Frontend prototype reviewer sync fixes (style + stale onerror guard)
+- Updated event handler syntax in `frontend-prototype/frontend/src/App.svelte` from legacy `on:click` to Svelte 5 style `onclick` for all button handlers.
+- Replaced `void` fire-and-forget async calls with explicit `.catch(...)` handling:
+  - `loadVoices().catch(...)` in `onMount`
+  - `processRecording(...).catch(...)` in recorder `onstop`
+- Added stale-session isolation in recorder `onerror`:
+  - Old recorder errors now return early without forcing global `uiState=error` when the recorder/session is no longer active.
+- Added regression coverage in `frontend-prototype/frontend/src/App.test.js`:
+  - New test confirms stale errors from prior recorder sessions do not disrupt an active newer recording.
+- Verification:
+  - `cd frontend-prototype/frontend && npm test` -> 6 passed.
+  - `cd frontend-prototype/frontend && npm run build` -> succeeded.
+  - `cd frontend-prototype/frontend && npm run test:e2e` -> 2 passed.

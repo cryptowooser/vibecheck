@@ -197,4 +197,78 @@ describe('App milestone 2 state preview', () => {
       }
     }
   })
+
+  it('ignores stale recorder errors from a previous session', async () => {
+    const stopTrackOne = vi.fn()
+    const stopTrackTwo = vi.fn()
+    const streamOne = { getTracks: () => [{ stop: stopTrackOne }] }
+    const streamTwo = { getTracks: () => [{ stop: stopTrackTwo }] }
+    const originalMediaDevices = Object.getOwnPropertyDescriptor(navigator, 'mediaDevices')
+
+    class RecorderWithManualError {
+      static instances = []
+
+      static isTypeSupported() {
+        return true
+      }
+
+      static emitError(index) {
+        const instance = RecorderWithManualError.instances[index]
+        if (instance?.onerror) {
+          instance.onerror()
+        }
+      }
+
+      constructor() {
+        this.state = 'inactive'
+        this.mimeType = 'audio/webm'
+        this.ondataavailable = null
+        this.onerror = null
+        this.onstop = null
+        RecorderWithManualError.instances.push(this)
+      }
+
+      start() {
+        this.state = 'recording'
+      }
+
+      stop() {
+        this.state = 'inactive'
+        if (this.onstop) {
+          this.onstop()
+        }
+      }
+    }
+
+    try {
+      const getUserMedia = vi.fn().mockResolvedValueOnce(streamOne).mockResolvedValueOnce(streamTwo)
+      Object.defineProperty(navigator, 'mediaDevices', {
+        configurable: true,
+        value: { getUserMedia },
+      })
+      vi.stubGlobal('MediaRecorder', RecorderWithManualError)
+      window.MediaRecorder = RecorderWithManualError
+
+      render(App)
+
+      await fireEvent.click(screen.getByRole('button', { name: 'Record' }))
+      await fireEvent.click(screen.getByRole('button', { name: 'idle' }))
+      await fireEvent.click(screen.getByRole('button', { name: 'Record' }))
+
+      expect(screen.getByRole('button', { name: 'Stop' })).toBeInTheDocument()
+
+      RecorderWithManualError.emitError(0)
+
+      expect(screen.queryByRole('heading', { name: 'Error' })).not.toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Stop' })).toBeInTheDocument()
+      expect(stopTrackOne).toHaveBeenCalled()
+      expect(stopTrackTwo).not.toHaveBeenCalled()
+    } finally {
+      if (originalMediaDevices) {
+        Object.defineProperty(navigator, 'mediaDevices', originalMediaDevices)
+      } else {
+        Reflect.deleteProperty(navigator, 'mediaDevices')
+      }
+    }
+  })
 })

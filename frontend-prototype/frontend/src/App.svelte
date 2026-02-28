@@ -53,7 +53,9 @@
   const isBusy = () => uiState === STATE_TRANSCRIBING || uiState === STATE_SPEAKING
 
   onMount(() => {
-    void loadVoices()
+    loadVoices().catch((error) => {
+      console.error('Unexpected loadVoices failure:', error)
+    })
     return () => {
       stopTracks()
       stopAudio()
@@ -194,13 +196,16 @@
       }
     }
     recorder.onerror = () => {
+      const isActiveSession = mediaRecorder === recorder && currentRecordingSessionId === sessionId
       stopTracks(stream)
-      if (mediaRecorder === recorder) {
-        mediaRecorder = null
+
+      if (!isActiveSession) {
+        droppedRecordingSessionIds.delete(sessionId)
+        return
       }
-      if (currentRecordingSessionId === sessionId) {
-        currentRecordingSessionId = 0
-      }
+
+      mediaRecorder = null
+      currentRecordingSessionId = 0
       setError('stt', 'Recording failed. Please try again.')
     }
     recorder.onstop = () => {
@@ -219,7 +224,14 @@
       }
 
       const blob = new Blob(recordingChunks, { type: recordedMimeType })
-      void processRecording(blob, Date.now() - recordingStartedAt)
+      processRecording(blob, Date.now() - recordingStartedAt).catch((error) => {
+        console.error('Unexpected processRecording failure:', error)
+        if (error instanceof Error && error.message.trim()) {
+          setError('stt', error.message)
+          return
+        }
+        setError('stt', 'Recording processing failed. Please try again.')
+      })
     }
 
     recorder.start(200)
@@ -383,9 +395,9 @@
     </select>
 
     {#if isRecording()}
-      <button class="action action-stop" on:click={stopRecording}>Stop</button>
+      <button class="action action-stop" onclick={stopRecording}>Stop</button>
     {:else}
-      <button class="action action-record" on:click={startRecording} disabled={isBusy()}>
+      <button class="action action-record" onclick={startRecording} disabled={isBusy()}>
         Record
       </button>
     {/if}
@@ -401,7 +413,7 @@
       {#each PREVIEW_STATES as state}
         <button
           class={`preview-button preview-${state} ${uiState === state ? 'is-active' : ''}`}
-          on:click={() => previewState(state)}
+          onclick={() => previewState(state)}
         >
           {state}
         </button>
@@ -424,10 +436,10 @@
       <p>{errorMessage}</p>
       <div class="retry-row">
         {#if lastFailedStage === 'stt' && lastRecordingBlob}
-          <button class="secondary" on:click={retryStt}>Retry STT</button>
+          <button class="secondary" onclick={retryStt}>Retry STT</button>
         {/if}
         {#if transcript}
-          <button class="secondary" on:click={retryTts}>Retry TTS</button>
+          <button class="secondary" onclick={retryTts}>Retry TTS</button>
         {/if}
       </div>
     </section>
