@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="manifest" href="/manifest.json" />
+    <meta name="theme-color" content="#ff7000" />
+    <title>Proto: PWA Install</title>
+    <style>
+      :root { color-scheme: dark; }
+      body {
+        margin: 0;
+        background: #11141f;
+        color: #eef1ff;
+        font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+        padding: 1rem;
+      }
+      .wrap { max-width: 760px; margin: 0 auto; }
+      button {
+        border: 1px solid #895016;
+        background: #3f2508;
+        color: #fff;
+        border-radius: 10px;
+        padding: 0.6rem 1rem;
+      }
+      pre {
+        background: #1e2538;
+        border: 1px solid #2d3855;
+        border-radius: 10px;
+        padding: 0.75rem;
+        white-space: pre-wrap;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        line-height: 1.35;
+      }
+      .stat {
+        margin: 0.4rem 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <h1>PWA Install Prototype</h1>
+      <div class="stat">Installable: <strong id="isInstallable">false</strong></div>
+      <div class="stat">Installed: <strong id="isInstalled">false</strong></div>
+      <div class="stat">Standalone mode: <strong id="isStandalone">false</strong></div>
+
+      <button id="install" hidden>Install App</button>
+
+      <h3>Log</h3>
+      <pre id="log"></pre>
+    </div>
+
+    <script>
+      const installButton = document.getElementById('install')
+      const isInstallableEl = document.getElementById('isInstallable')
+      const isInstalledEl = document.getElementById('isInstalled')
+      const isStandaloneEl = document.getElementById('isStandalone')
+      const logEl = document.getElementById('log')
+
+      let deferredPrompt = null
+
+      function log(message) {
+        logEl.textContent += `[${new Date().toLocaleTimeString()}] ${message}\n`
+      }
+
+      function detectStandalone() {
+        const standalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true
+        isStandaloneEl.textContent = String(standalone)
+        isInstalledEl.textContent = String(standalone)
+      }
+
+      async function registerSw() {
+        if (!('serviceWorker' in navigator)) {
+          log('service worker unsupported')
+          return
+        }
+        await navigator.serviceWorker.register('/sw.js')
+        log('service worker registered')
+      }
+
+      window.addEventListener('beforeinstallprompt', (event) => {
+        event.preventDefault()
+        deferredPrompt = event
+        installButton.hidden = false
+        isInstallableEl.textContent = 'true'
+        log('beforeinstallprompt captured')
+      })
+
+      window.addEventListener('appinstalled', () => {
+        isInstalledEl.textContent = 'true'
+        installButton.hidden = true
+        deferredPrompt = null
+        log('appinstalled event fired')
+      })
+
+      installButton.addEventListener('click', async () => {
+        if (!deferredPrompt) return
+        deferredPrompt.prompt()
+        const choice = await deferredPrompt.userChoice
+        log(`install prompt outcome=${choice.outcome}`)
+        deferredPrompt = null
+        installButton.hidden = true
+      })
+
+      detectStandalone()
+      registerSw().catch((error) => log(`sw register failed ${error}`))
+      log('ready')
+    </script>
+  </body>
+</html>

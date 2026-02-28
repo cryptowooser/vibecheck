@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Proto: WebSocket Reconnect</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      }
+      body {
+        margin: 0;
+        padding: 1rem;
+        background: #0a0f1a;
+        color: #e4ecff;
+      }
+      .wrap {
+        max-width: 760px;
+        margin: 0 auto;
+      }
+      h1 {
+        margin-top: 0;
+      }
+      .row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+        align-items: center;
+      }
+      button {
+        background: #1d2b4f;
+        color: #fff;
+        border: 1px solid #2f4a85;
+        border-radius: 10px;
+        padding: 0.5rem 0.9rem;
+        cursor: pointer;
+      }
+      .status {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+      }
+      .dot {
+        width: 12px;
+        height: 12px;
+        border-radius: 999px;
+      }
+      .green { background: #2ecc71; }
+      .yellow { background: #f1c40f; }
+      .red { background: #e74c3c; }
+      .panel {
+        margin-top: 1rem;
+        background: #11192d;
+        border: 1px solid #22355f;
+        border-radius: 12px;
+        padding: 0.75rem;
+      }
+      #log {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        height: 320px;
+        overflow-y: auto;
+        white-space: pre-wrap;
+        line-height: 1.35;
+      }
+      .small {
+        color: #9fb2dd;
+        font-size: 0.9rem;
+      }
+      code {
+        color: #bcd2ff;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <h1>WebSocket Reconnect Prototype</h1>
+      <div class="row">
+        <button id="toggle">Connect</button>
+        <div class="status">
+          <div id="dot" class="dot red"></div>
+          <strong id="state">disconnected</strong>
+        </div>
+        <div class="small">Reconnect count: <strong id="reconnectCount">0</strong></div>
+        <div class="small">Backoff timer: <strong id="backoff">0.0s</strong></div>
+      </div>
+
+      <div class="panel">
+        <div class="small">WS URL: <code id="wsUrl"></code></div>
+      </div>
+
+      <div class="panel" id="log"></div>
+    </div>
+
+    <script>
+      const stateEl = document.getElementById('state')
+      const dotEl = document.getElementById('dot')
+      const toggleEl = document.getElementById('toggle')
+      const logEl = document.getElementById('log')
+      const reconnectCountEl = document.getElementById('reconnectCount')
+      const backoffEl = document.getElementById('backoff')
+      const wsUrlEl = document.getElementById('wsUrl')
+
+      const scheme = location.protocol === 'https:' ? 'wss' : 'ws'
+      const wsUrl = `${scheme}://${location.host}/ws/events`
+      wsUrlEl.textContent = wsUrl
+
+      let ws = null
+      let shouldReconnect = false
+      let reconnectCount = 0
+      let reconnectAttempt = 0
+      let reconnectTimer = null
+      let reconnectDeadline = 0
+      let lastMessageAt = 0
+
+      function setState(name) {
+        stateEl.textContent = name
+        dotEl.className = 'dot ' + (name === 'connected' ? 'green' : name === 'reconnecting' ? 'yellow' : 'red')
+      }
+
+      function log(msg, payload) {
+        const prefix = `[${new Date().toLocaleTimeString()}] ${msg}`
+        const line = payload ? `${prefix} ${JSON.stringify(payload)}` : prefix
+        logEl.textContent += `${line}\n`
+        logEl.scrollTop = logEl.scrollHeight
+      }
+
+      function clearReconnectTimer() {
+        if (reconnectTimer) {
+          clearTimeout(reconnectTimer)
+          reconnectTimer = null
+        }
+        reconnectDeadline = 0
+      }
+
+      function updateBackoffDisplay() {
+        if (!reconnectDeadline) {
+          backoffEl.textContent = '0.0s'
+          return
+        }
+        const remainingMs = Math.max(0, reconnectDeadline - Date.now())
+        backoffEl.textContent = `${(remainingMs / 1000).toFixed(1)}s`
+      }
+
+      function forceReconnect(reason) {
+        if (!shouldReconnect) return
+        log(`forcing reconnect: ${reason}`)
+        if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
+          ws.close(4000, 'watchdog reconnect')
+        }
+      }
+
+      function connect() {
+        clearReconnectTimer()
+        setState('reconnecting')
+
+        ws = new WebSocket(wsUrl)
+        ws.onopen = () => {
+          setState('connected')
+          reconnectAttempt = 0
+          lastMessageAt = Date.now()
+          backoffEl.textContent = '0.0s'
+          log('connected')
+          toggleEl.textContent = 'Disconnect'
+        }
+
+        ws.onmessage = (event) => {
+          lastMessageAt = Date.now()
+          try {
+            log('message', JSON.parse(event.data))
+          } catch {
+            log('message', { raw: event.data })
+          }
+        }
+
+        ws.onclose = (event) => {
+          log(`closed code=${event.code} reason=${event.reason || '(none)'}`)
+          setState('disconnected')
+          if (!shouldReconnect) {
+            toggleEl.textContent = 'Connect'
+            return
+          }
+
+          reconnectCount += 1
+          reconnectCountEl.textContent = String(reconnectCount)
+          reconnectAttempt += 1
+          const delayMs = Math.min(30000, 1000 * (2 ** (reconnectAttempt - 1)))
+          reconnectDeadline = Date.now() + delayMs
+          setState('reconnecting')
+          log(`reconnect in ${(delayMs / 1000).toFixed(1)}s`)
+          reconnectTimer = setTimeout(() => connect(), delayMs)
+        }
+
+        ws.onerror = () => {
+          log('socket error')
+        }
+      }
+
+      function disconnect() {
+        shouldReconnect = false
+        clearReconnectTimer()
+        if (ws) {
+          ws.close(1000, 'manual disconnect')
+        }
+        setState('disconnected')
+        toggleEl.textContent = 'Connect'
+      }
+
+      toggleEl.addEventListener('click', () => {
+        if (!ws || ws.readyState === WebSocket.CLOSED) {
+          shouldReconnect = true
+          connect()
+          return
+        }
+        disconnect()
+      })
+
+      setInterval(updateBackoffDisplay, 100)
+
+      setInterval(() => {
+        if (!shouldReconnect || !ws || ws.readyState !== WebSocket.OPEN) return
+        if (!lastMessageAt) return
+        if (Date.now() - lastMessageAt > 45000) {
+          forceReconnect('no message for 45s')
+        }
+      }, 1000)
+
+      log('ready')
+    </script>
+  </body>
+</html>

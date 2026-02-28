@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Proto: MediaRecorder + Opus</title>
+    <style>
+      :root { color-scheme: dark; }
+      body {
+        margin: 0;
+        font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+        background: #111017;
+        color: #f4f2ff;
+        padding: 1rem;
+      }
+      .wrap { max-width: 760px; margin: 0 auto; }
+      button {
+        border: 1px solid #4f3a82;
+        background: #241840;
+        color: #fff;
+        border-radius: 10px;
+        padding: 0.6rem 1rem;
+        margin-right: 0.5rem;
+        margin-bottom: 0.5rem;
+      }
+      #ptt.recording {
+        background: #5e1111;
+        border-color: #a82f2f;
+      }
+      .status {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        margin: 0.8rem 0;
+      }
+      .pulse {
+        width: 14px;
+        height: 14px;
+        border-radius: 999px;
+        background: #8b8b8b;
+      }
+      .pulse.active {
+        background: #ff3d3d;
+        animation: pulse 1s infinite;
+      }
+      @keyframes pulse {
+        0% { transform: scale(1); opacity: 1; }
+        100% { transform: scale(1.35); opacity: 0.4; }
+      }
+      .panel {
+        border: 1px solid #3f2e68;
+        border-radius: 12px;
+        background: #1d1730;
+        padding: 0.8rem;
+        margin-top: 0.8rem;
+      }
+      #log {
+        height: 240px;
+        overflow-y: auto;
+        white-space: pre-wrap;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        line-height: 1.35;
+      }
+      audio { width: 100%; margin-top: 0.7rem; }
+      code { color: #f7c2ff; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <h1>MediaRecorder + Opus Prototype</h1>
+      <button id="ptt">Hold to Record</button>
+      <button id="upload" disabled>Upload</button>
+
+      <div class="status">
+        <div id="dot" class="pulse"></div>
+        <strong id="duration">0.0s</strong>
+        <span id="blobMeta">No recording yet</span>
+      </div>
+
+      <div class="panel">
+        <div>Server response: <code id="response">(none)</code></div>
+        <audio id="player" controls></audio>
+      </div>
+
+      <div class="panel" id="log"></div>
+    </div>
+
+    <script>
+      const ptt = document.getElementById('ptt')
+      const uploadBtn = document.getElementById('upload')
+      const dot = document.getElementById('dot')
+      const durationEl = document.getElementById('duration')
+      const blobMeta = document.getElementById('blobMeta')
+      const responseEl = document.getElementById('response')
+      const player = document.getElementById('player')
+      const logEl = document.getElementById('log')
+
+      let recorder = null
+      let chunks = []
+      let recordingStart = 0
+      let timer = null
+      let audioBlob = null
+
+      function log(message) {
+        logEl.textContent += `[${new Date().toLocaleTimeString()}] ${message}\n`
+        logEl.scrollTop = logEl.scrollHeight
+      }
+
+      function setRecording(active) {
+        dot.classList.toggle('active', active)
+        ptt.classList.toggle('recording', active)
+      }
+
+      function updateDuration() {
+        if (!recordingStart) {
+          durationEl.textContent = '0.0s'
+          return
+        }
+        durationEl.textContent = `${((Date.now() - recordingStart) / 1000).toFixed(1)}s`
+      }
+
+      async function startRecording() {
+        if (recorder && recorder.state !== 'inactive') return
+        audioBlob = null
+        uploadBtn.disabled = true
+        chunks = []
+
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: { echoCancellation: true, noiseSuppression: true },
+        })
+
+        const preferred = 'audio/webm;codecs=opus'
+        const mimeType = MediaRecorder.isTypeSupported(preferred) ? preferred : 'audio/webm'
+
+        recorder = new MediaRecorder(stream, { mimeType })
+        recorder.onstart = () => {
+          recordingStart = Date.now()
+          timer = setInterval(updateDuration, 100)
+          setRecording(true)
+          log(`start mimeType=${mimeType}`)
+        }
+        recorder.ondataavailable = (event) => {
+          if (event.data && event.data.size > 0) {
+            chunks.push(event.data)
+          }
+          log(`dataavailable bytes=${event.data.size}`)
+        }
+        recorder.onstop = () => {
+          clearInterval(timer)
+          timer = null
+          setRecording(false)
+          stream.getTracks().forEach((t) => t.stop())
+
+          audioBlob = new Blob(chunks, { type: mimeType })
+          player.src = URL.createObjectURL(audioBlob)
+          blobMeta.textContent = `Blob size: ${audioBlob.size} bytes (${audioBlob.type || 'unknown'})`
+          uploadBtn.disabled = audioBlob.size === 0
+          recordingStart = 0
+          updateDuration()
+          log(`stop blob_bytes=${audioBlob.size}`)
+        }
+
+        recorder.start(200)
+      }
+
+      function stopRecording() {
+        if (!recorder || recorder.state === 'inactive') return
+        recorder.stop()
+      }
+
+      async function uploadRecording() {
+        if (!audioBlob) return
+        log(`upload bytes=${audioBlob.size}`)
+        const response = await fetch('/upload', {
+          method: 'POST',
+          headers: { 'Content-Type': audioBlob.type || 'audio/webm' },
+          body: audioBlob,
+        })
+        const payload = await response.json()
+        responseEl.textContent = JSON.stringify(payload)
+        log(`response ${response.status} text=${payload.text}`)
+      }
+
+      ptt.addEventListener('mousedown', startRecording)
+      ptt.addEventListener('mouseup', stopRecording)
+      ptt.addEventListener('mouseleave', stopRecording)
+      ptt.addEventListener('touchstart', (event) => {
+        event.preventDefault()
+        startRecording()
+      }, { passive: false })
+      ptt.addEventListener('touchend', (event) => {
+        event.preventDefault()
+        stopRecording()
+      }, { passive: false })
+
+      uploadBtn.addEventListener('click', uploadRecording)
+      log('ready')
+    </script>
+  </body>
+</html>

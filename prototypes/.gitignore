@@ -1,0 +1,3 @@
+push-notifications/vapid_keys.json
+push-notifications/subscriptions.json
+speech-synthesis/__pycache__/

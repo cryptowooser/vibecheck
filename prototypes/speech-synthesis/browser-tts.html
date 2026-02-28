@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Proto: Browser Speech Synthesis</title>
+    <style>
+      :root { color-scheme: dark; }
+      body {
+        margin: 0;
+        background: #14110d;
+        color: #fff6ea;
+        font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+        padding: 1rem;
+      }
+      .wrap { max-width: 760px; margin: 0 auto; }
+      textarea, select, input {
+        width: 100%;
+        margin: 0.35rem 0 0.8rem;
+        padding: 0.55rem;
+        border-radius: 8px;
+        border: 1px solid #6d5539;
+        background: #2a2118;
+        color: #fff;
+      }
+      button {
+        margin-right: 0.5rem;
+        border: 1px solid #ac7839;
+        background: #4a3115;
+        color: #fff;
+        border-radius: 10px;
+        padding: 0.6rem 0.9rem;
+      }
+      pre {
+        background: #241d15;
+        border: 1px solid #574024;
+        border-radius: 10px;
+        padding: 0.75rem;
+        white-space: pre-wrap;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      }
+      .indicator {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+      }
+      .dot {
+        width: 12px;
+        height: 12px;
+        border-radius: 999px;
+        background: #888;
+      }
+      .dot.active { background: #20d364; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <h1>Speech Synthesis Prototype</h1>
+
+      <label for="text">Text</label>
+      <textarea id="text" rows="4">こんにちは。vibecheck のテキスト読み上げテストです。</textarea>
+
+      <label for="language">Language</label>
+      <select id="language">
+        <option value="ja-JP">ja-JP</option>
+        <option value="en-US">en-US</option>
+      </select>
+
+      <label for="voice">Voice</label>
+      <select id="voice"></select>
+
+      <label for="rate">Rate (0.5 - 2.0)</label>
+      <input id="rate" type="range" min="0.5" max="2.0" step="0.1" value="1.0" />
+
+      <label for="pitch">Pitch (0.5 - 2.0)</label>
+      <input id="pitch" type="range" min="0.5" max="2.0" step="0.1" value="1.0" />
+
+      <div>
+        <button id="speak">Speak</button>
+        <button id="stop">Stop</button>
+      </div>
+
+      <p class="indicator">Speaking: <span class="dot" id="dot"></span></p>
+
+      <h3>Log</h3>
+      <pre id="log"></pre>
+    </div>
+
+    <script>
+      const textEl = document.getElementById('text')
+      const languageEl = document.getElementById('language')
+      const voiceEl = document.getElementById('voice')
+      const rateEl = document.getElementById('rate')
+      const pitchEl = document.getElementById('pitch')
+      const dotEl = document.getElementById('dot')
+      const logEl = document.getElementById('log')
+
+      function log(message) {
+        logEl.textContent += `[${new Date().toLocaleTimeString()}] ${message}\n`
+      }
+
+      function refreshVoices() {
+        const voices = speechSynthesis.getVoices()
+        const language = languageEl.value
+        const filtered = voices.filter((voice) => voice.lang.toLowerCase().startsWith(language.split('-')[0].toLowerCase()))
+        const candidates = filtered.length ? filtered : voices
+
+        voiceEl.innerHTML = ''
+        for (const voice of candidates) {
+          const option = document.createElement('option')
+          option.value = voice.name
+          option.textContent = `${voice.name} (${voice.lang})`
+          voiceEl.appendChild(option)
+        }
+        log(`voices loaded count=${candidates.length}`)
+      }
+
+      function setSpeaking(active) {
+        dotEl.classList.toggle('active', active)
+      }
+
+      function speak() {
+        const utterance = new SpeechSynthesisUtterance(textEl.value)
+        utterance.lang = languageEl.value
+        utterance.rate = Number(rateEl.value)
+        utterance.pitch = Number(pitchEl.value)
+
+        const selectedVoiceName = voiceEl.value
+        const selectedVoice = speechSynthesis.getVoices().find((voice) => voice.name === selectedVoiceName)
+        if (selectedVoice) utterance.voice = selectedVoice
+
+        utterance.onstart = () => {
+          setSpeaking(true)
+          log('start')
+        }
+        utterance.onend = () => {
+          setSpeaking(false)
+          log('end')
+        }
+        utterance.onerror = (event) => {
+          setSpeaking(false)
+          log(`error ${event.error}`)
+        }
+        utterance.onboundary = (event) => {
+          log(`boundary charIndex=${event.charIndex}`)
+        }
+
+        speechSynthesis.speak(utterance)
+      }
+
+      document.getElementById('speak').addEventListener('click', speak)
+      document.getElementById('stop').addEventListener('click', () => {
+        speechSynthesis.cancel()
+        setSpeaking(false)
+        log('cancel')
+      })
+
+      languageEl.addEventListener('change', refreshVoices)
+      speechSynthesis.onvoiceschanged = refreshVoices
+      refreshVoices()
+      log('ready')
+    </script>
+  </body>
+</html>

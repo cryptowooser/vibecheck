@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Proto: Push Notifications</title>
+    <style>
+      :root { color-scheme: dark; }
+      body {
+        margin: 0;
+        background: #0f1118;
+        color: #f0f4ff;
+        font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+        padding: 1rem;
+      }
+      .wrap { max-width: 760px; margin: 0 auto; }
+      button {
+        background: #1d2a45;
+        border: 1px solid #2f4e80;
+        color: white;
+        border-radius: 10px;
+        padding: 0.6rem 0.9rem;
+        margin: 0.25rem 0.35rem 0.25rem 0;
+      }
+      pre {
+        background: #141f34;
+        border: 1px solid #2a4779;
+        border-radius: 10px;
+        padding: 0.75rem;
+        overflow: auto;
+        max-height: 220px;
+      }
+      #log {
+        white-space: pre-wrap;
+        line-height: 1.35;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      }
+      .status {
+        margin: 0.6rem 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <h1>Push Notifications Prototype</h1>
+      <div class="status">Permission: <strong id="permission"></strong></div>
+
+      <button id="requestPermission">Request Permission</button>
+      <button id="subscribe">Subscribe</button>
+      <button id="sendTest">Send Test Push</button>
+
+      <h3>Subscription</h3>
+      <pre id="subscription">(none)</pre>
+
+      <h3>Log</h3>
+      <pre id="log"></pre>
+    </div>
+
+    <script>
+      const permissionEl = document.getElementById('permission')
+      const subscriptionEl = document.getElementById('subscription')
+      const logEl = document.getElementById('log')
+
+      function log(message) {
+        logEl.textContent += `[${new Date().toLocaleTimeString()}] ${message}\n`
+        logEl.scrollTop = logEl.scrollHeight
+      }
+
+      function updatePermission() {
+        permissionEl.textContent = Notification.permission
+      }
+
+      function base64ToUint8Array(base64String) {
+        const padding = '='.repeat((4 - (base64String.length % 4)) % 4)
+        const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/')
+        const rawData = atob(base64)
+        const outputArray = new Uint8Array(rawData.length)
+        for (let i = 0; i < rawData.length; i += 1) {
+          outputArray[i] = rawData.charCodeAt(i)
+        }
+        return outputArray
+      }
+
+      async function requestPermission() {
+        const result = await Notification.requestPermission()
+        updatePermission()
+        log(`permission result=${result}`)
+      }
+
+      async function registerAndSubscribe() {
+        if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+          log('Push API not supported in this browser')
+          return
+        }
+
+        const registration = await navigator.serviceWorker.register('/sw.js')
+        log('service worker registered')
+
+        const keyResponse = await fetch('/vapid-public-key')
+        const keyPayload = await keyResponse.json()
+
+        const subscription = await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: base64ToUint8Array(keyPayload.publicKey),
+        })
+
+        subscriptionEl.textContent = JSON.stringify(subscription.toJSON(), null, 2)
+
+        const saveResponse = await fetch('/subscribe', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(subscription),
+        })
+        const savePayload = await saveResponse.json()
+        log(`subscribed count=${savePayload.count}`)
+      }
+
+      async function sendTestPush() {
+        const response = await fetch('/send-test', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title: 'Vibe Check', body: 'Tool approval needed.' }),
+        })
+        const payload = await response.json()
+        log(`send-test attempted=${payload.attempted} sent=${payload.sent} failed=${payload.failed}`)
+      }
+
+      navigator.serviceWorker?.addEventListener('message', (event) => {
+        log(`sw message ${JSON.stringify(event.data)}`)
+      })
+
+      document.getElementById('requestPermission').addEventListener('click', requestPermission)
+      document.getElementById('subscribe').addEventListener('click', registerAndSubscribe)
+      document.getElementById('sendTest').addEventListener('click', sendTestPush)
+
+      updatePermission()
+      log('ready')
+    </script>
+  </body>
+</html>
