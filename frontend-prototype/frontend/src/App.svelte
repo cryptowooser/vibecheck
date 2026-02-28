@@ -47,6 +47,7 @@
 
   let currentAudio = null
   let currentAudioUrl = ''
+  let requestInFlight = false
 
   const isRecording = () => uiState === STATE_RECORDING
   const isBusy = () => uiState === STATE_TRANSCRIBING || uiState === STATE_SPEAKING
@@ -159,6 +160,8 @@
     }
 
     clearError()
+    transcript = ''
+    lastRecordingBlob = null
     statusMessage = 'Requesting microphone access...'
 
     try {
@@ -253,6 +256,7 @@
     }
 
     lastRecordingBlob = blob
+    requestInFlight = true
     if (uiState !== STATE_TRANSCRIBING) {
       uiState = STATE_TRANSCRIBING
       statusMessage = 'Transcribing...'
@@ -261,16 +265,19 @@
     try {
       transcript = await sendToStt(blob)
     } catch (error) {
+      requestInFlight = false
       setError('stt', error.message)
       return
     }
 
     try {
       await runTtsPlayback(transcript)
+      requestInFlight = false
       uiState = STATE_IDLE
       statusMessage = 'Playback complete'
       clearError()
     } catch (error) {
+      requestInFlight = false
       setError('tts', error.message)
     }
   }
@@ -344,7 +351,7 @@
   }
 
   async function retryStt() {
-    if (!lastRecordingBlob) {
+    if (!lastRecordingBlob || requestInFlight || isRecording()) {
       return
     }
     clearError()
@@ -352,7 +359,7 @@
   }
 
   async function retryTts() {
-    if (lastFailedStage !== 'tts') {
+    if (lastFailedStage !== 'tts' || requestInFlight || isRecording()) {
       return
     }
     const text = transcript.trim()
@@ -360,11 +367,14 @@
       return
     }
     clearError()
+    requestInFlight = true
     try {
       await runTtsPlayback(text)
+      requestInFlight = false
       uiState = STATE_IDLE
       statusMessage = 'Playback complete'
     } catch (error) {
+      requestInFlight = false
       setError('tts', error.message)
     }
   }
@@ -416,6 +426,7 @@
         <button
           class={`preview-button preview-${state} ${uiState === state ? 'is-active' : ''}`}
           onclick={() => previewState(state)}
+          disabled={requestInFlight}
         >
           {state}
         </button>
@@ -438,10 +449,14 @@
       <p>{errorMessage}</p>
       <div class="retry-row">
         {#if lastFailedStage === 'stt' && lastRecordingBlob}
-          <button class="secondary" onclick={retryStt}>Retry STT</button>
+          <button class="secondary" onclick={retryStt} disabled={requestInFlight || isRecording()}>
+            Retry STT
+          </button>
         {/if}
         {#if lastFailedStage === 'tts' && transcript}
-          <button class="secondary" onclick={retryTts}>Retry TTS</button>
+          <button class="secondary" onclick={retryTts} disabled={requestInFlight || isRecording()}>
+            Retry TTS
+          </button>
         {/if}
       </div>
     </section>

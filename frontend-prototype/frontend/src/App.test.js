@@ -125,6 +125,16 @@ function installDateNowIncrementMock(step = 400, start = 1000) {
   })
 }
 
+function createDeferred() {
+  let resolve
+  let reject
+  const promise = new Promise((promiseResolve, promiseReject) => {
+    resolve = promiseResolve
+    reject = promiseReject
+  })
+  return { promise, resolve, reject }
+}
+
 describe('App milestone 2 state preview', () => {
   let fetchMock
 
@@ -1021,6 +1031,177 @@ describe('App milestone 4 TTS integration and playback', () => {
       expect(await screen.findByRole('heading', { name: 'Error' })).toBeInTheDocument()
       expect(screen.getByRole('button', { name: 'Retry STT' })).toBeInTheDocument()
       expect(screen.queryByRole('button', { name: 'Retry TTS' })).not.toBeInTheDocument()
+    } finally {
+      restoreMediaDevices()
+    }
+  })
+})
+
+describe('App milestone 5 hardening and stability', () => {
+  let fetchMock
+  let restorePlaybackMocks
+
+  beforeEach(() => {
+    restorePlaybackMocks = installPlaybackMocks()
+  })
+
+  afterEach(() => {
+    if (restorePlaybackMocks) {
+      restorePlaybackMocks()
+      restorePlaybackMocks = null
+    }
+    vi.unstubAllGlobals()
+    vi.restoreAllMocks()
+  })
+
+  it('clears stale transcript state when a new recording starts', async () => {
+    let sttAttempts = 0
+    fetchMock = vi.fn(async (resource) => {
+      if (resource === '/api/voices') {
+        return jsonResponse({
+          voices: [{ voice_id: 'voice-one', name: 'Voice One' }],
+        })
+      }
+      if (resource === '/api/stt') {
+        sttAttempts += 1
+        if (sttAttempts === 1) {
+          return jsonResponse({ text: 'first transcript', language: 'en' })
+        }
+        return jsonResponse({ text: 'second transcript', language: 'en' })
+      }
+      if (resource === '/api/tts') {
+        return new Response(new Uint8Array([73, 68, 51]), {
+          status: 200,
+          headers: { 'Content-Type': 'audio/mpeg' },
+        })
+      }
+      return jsonResponse({ detail: 'Not found' }, 404)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const restoreMediaDevices = installMediaDevices(vi.fn().mockResolvedValue({ getTracks: () => [] }))
+    installRecorderMock({ chunkBytes: 4096 })
+    installDateNowIncrementMock(400)
+
+    try {
+      render(App)
+
+      await fireEvent.click(screen.getByRole('button', { name: 'Record' }))
+      await fireEvent.click(screen.getByRole('button', { name: 'Stop' }))
+
+      await screen.findByText('first transcript')
+      await waitFor(() => {
+        expect(screen.getByTestId('state-pill')).toHaveTextContent('idle')
+      })
+
+      await fireEvent.click(screen.getByRole('button', { name: 'Record' }))
+
+      expect(screen.queryByText('first transcript')).not.toBeInTheDocument()
+      expect(screen.getByText('Your transcript will appear here.')).toBeInTheDocument()
+    } finally {
+      restoreMediaDevices()
+    }
+  })
+
+  it('disables non-essential controls while transcription request is in flight', async () => {
+    const sttDeferred = createDeferred()
+    fetchMock = vi.fn(async (resource) => {
+      if (resource === '/api/voices') {
+        return jsonResponse({
+          voices: [{ voice_id: 'voice-one', name: 'Voice One' }],
+        })
+      }
+      if (resource === '/api/stt') {
+        return sttDeferred.promise
+      }
+      if (resource === '/api/tts') {
+        return new Response(new Uint8Array([73, 68, 51]), {
+          status: 200,
+          headers: { 'Content-Type': 'audio/mpeg' },
+        })
+      }
+      return jsonResponse({ detail: 'Not found' }, 404)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const restoreMediaDevices = installMediaDevices(vi.fn().mockResolvedValue({ getTracks: () => [] }))
+    installRecorderMock({ chunkBytes: 4096 })
+    installDateNowIncrementMock(400)
+
+    try {
+      render(App)
+
+      await fireEvent.click(screen.getByRole('button', { name: 'Record' }))
+      await fireEvent.click(screen.getByRole('button', { name: 'Stop' }))
+
+      await waitFor(() => {
+        expect(screen.getByTestId('state-pill')).toHaveTextContent('transcribing')
+      })
+      expect(screen.getByRole('combobox', { name: 'Voice' })).toBeDisabled()
+      expect(screen.getByRole('button', { name: 'Record' })).toBeDisabled()
+      expect(screen.getByRole('button', { name: 'idle' })).toBeDisabled()
+      expect(screen.getByRole('button', { name: 'recording' })).toBeDisabled()
+      expect(screen.getByRole('button', { name: 'transcribing' })).toBeDisabled()
+      expect(screen.getByRole('button', { name: 'speaking' })).toBeDisabled()
+      expect(screen.getByRole('button', { name: 'error' })).toBeDisabled()
+
+      sttDeferred.resolve(jsonResponse({ text: 'deferred transcript', language: 'en' }))
+      await waitFor(() => {
+        expect(screen.getByTestId('state-pill')).toHaveTextContent('idle')
+      })
+    } finally {
+      restoreMediaDevices()
+    }
+  })
+
+  it('sends browser requests only to proxy endpoints without provider API auth headers', async () => {
+    let sttHeaders = null
+    let ttsHeaders = null
+
+    fetchMock = vi.fn(async (resource, options = {}) => {
+      if (resource === '/api/voices') {
+        return jsonResponse({
+          voices: [{ voice_id: 'voice-one', name: 'Voice One' }],
+        })
+      }
+      if (resource === '/api/stt') {
+        sttHeaders = options.headers ?? {}
+        return jsonResponse({ text: 'header check', language: 'en' })
+      }
+      if (resource === '/api/tts') {
+        ttsHeaders = options.headers ?? {}
+        return new Response(new Uint8Array([73, 68, 51]), {
+          status: 200,
+          headers: { 'Content-Type': 'audio/mpeg' },
+        })
+      }
+      return jsonResponse({ detail: 'Not found' }, 404)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const restoreMediaDevices = installMediaDevices(vi.fn().mockResolvedValue({ getTracks: () => [] }))
+    installRecorderMock({ chunkBytes: 4096 })
+    installDateNowIncrementMock(400)
+
+    try {
+      render(App)
+
+      await fireEvent.click(screen.getByRole('button', { name: 'Record' }))
+      await fireEvent.click(screen.getByRole('button', { name: 'Stop' }))
+      await screen.findByText('header check')
+
+      const calledUrls = fetchMock.mock.calls.map(([resource]) => resource)
+      expect(calledUrls).toContain('/api/voices')
+      expect(calledUrls).toContain('/api/stt')
+      expect(calledUrls).toContain('/api/tts')
+      expect(calledUrls.every((resource) => typeof resource === 'string' && resource.startsWith('/api/'))).toBe(
+        true,
+      )
+
+      expect(Object.keys(sttHeaders)).toEqual([])
+      expect(ttsHeaders).toEqual({ 'Content-Type': 'application/json' })
+      expect(ttsHeaders.authorization ?? ttsHeaders.Authorization).toBeUndefined()
+      expect(ttsHeaders['xi-api-key']).toBeUndefined()
     } finally {
       restoreMediaDevices()
     }

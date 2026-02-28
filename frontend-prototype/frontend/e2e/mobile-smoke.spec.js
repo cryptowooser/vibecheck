@@ -183,3 +183,136 @@ test('mobile voice loop surfaces TTS HTTP failure and recovers on retry', async 
   await expect(page.getByRole('heading', { name: 'Error' })).toHaveCount(0)
   expect(ttsAttempts).toBe(2)
 })
+
+test('mobile voice loop surfaces STT HTTP failure and recovers on retry', async ({ page }) => {
+  await installVoiceLoopBrowserMocks(page)
+  await stubVoices(page)
+
+  let sttAttempts = 0
+  await page.route('**/api/stt', async (route) => {
+    sttAttempts += 1
+    if (sttAttempts === 1) {
+      await route.fulfill({
+        status: 502,
+        contentType: 'application/json',
+        body: JSON.stringify({ detail: 'STT upstream unavailable' }),
+      })
+      return
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ text: 'stt retry transcript', language: 'en' }),
+    })
+  })
+  await page.route('**/api/tts', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'audio/mpeg',
+      body: 'ID3',
+    })
+  })
+
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Record', exact: true }).click()
+  await page.getByRole('button', { name: 'Stop', exact: true }).click()
+
+  await expect(page.getByRole('heading', { name: 'Error' })).toBeVisible()
+  await expect(page.getByText('STT upstream unavailable')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Retry STT' })).toBeVisible()
+
+  await page.getByRole('button', { name: 'Retry STT' }).click()
+
+  await expect(page.getByText('stt retry transcript')).toBeVisible()
+  await expect(page.getByTestId('status-message')).toHaveText('Playback complete')
+  await expect(page.getByRole('heading', { name: 'Error' })).toHaveCount(0)
+  expect(sttAttempts).toBe(2)
+})
+
+test('mobile UI disables non-essential controls while transcription is in-flight', async ({ page }) => {
+  await installVoiceLoopBrowserMocks(page)
+  await stubVoices(page)
+
+  let releaseSttRequest
+  const sttRequestGate = new Promise((resolve) => {
+    releaseSttRequest = resolve
+  })
+
+  await page.route('**/api/stt', async (route) => {
+    await sttRequestGate
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ text: 'locked controls transcript', language: 'en' }),
+    })
+  })
+  await page.route('**/api/tts', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'audio/mpeg',
+      body: 'ID3',
+    })
+  })
+
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Record', exact: true }).click()
+  await page.getByRole('button', { name: 'Stop', exact: true }).click()
+
+  await expect(page.getByTestId('state-pill')).toHaveText('transcribing')
+  await expect(page.getByRole('combobox', { name: 'Voice' })).toBeDisabled()
+  await expect(page.getByRole('button', { name: 'Record', exact: true })).toBeDisabled()
+  await expect(page.getByRole('button', { name: 'idle', exact: true })).toBeDisabled()
+  await expect(page.getByRole('button', { name: 'recording', exact: true })).toBeDisabled()
+  await expect(page.getByRole('button', { name: 'transcribing', exact: true })).toBeDisabled()
+  await expect(page.getByRole('button', { name: 'speaking', exact: true })).toBeDisabled()
+  await expect(page.getByRole('button', { name: 'error', exact: true })).toBeDisabled()
+
+  releaseSttRequest()
+
+  await expect(page.getByTestId('state-pill')).toHaveText('idle')
+})
+
+test('mobile browser uses local proxy routes only and does not send provider auth headers', async ({ page }) => {
+  await installVoiceLoopBrowserMocks(page)
+  await stubVoices(page)
+
+  const upstreamDirectCalls = []
+  let sttHeaders = {}
+  let ttsHeaders = {}
+
+  page.on('request', (request) => {
+    const url = request.url()
+    if (url.includes('api.mistral.ai') || url.includes('api.elevenlabs.io')) {
+      upstreamDirectCalls.push(url)
+    }
+  })
+
+  await page.route('**/api/stt', async (route) => {
+    sttHeaders = route.request().headers()
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ text: 'proxy header transcript', language: 'en' }),
+    })
+  })
+  await page.route('**/api/tts', async (route) => {
+    ttsHeaders = route.request().headers()
+    await route.fulfill({
+      status: 200,
+      contentType: 'audio/mpeg',
+      body: 'ID3',
+    })
+  })
+
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Record', exact: true }).click()
+  await page.getByRole('button', { name: 'Stop', exact: true }).click()
+
+  await expect(page.getByText('proxy header transcript')).toBeVisible()
+  await expect(page.getByTestId('status-message')).toHaveText('Playback complete')
+  expect(upstreamDirectCalls).toEqual([])
+  expect(sttHeaders.authorization).toBeUndefined()
+  expect(sttHeaders['xi-api-key']).toBeUndefined()
+  expect(ttsHeaders.authorization).toBeUndefined()
+  expect(ttsHeaders['xi-api-key']).toBeUndefined()
+})

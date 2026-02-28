@@ -234,3 +234,27 @@
   - `cd frontend-prototype/server && uv run pytest tests/test_api.py::test_tts_reads_upstream_stream_in_single_pass -v` -> passed (after initial red failure).
   - `cd frontend-prototype/server && uv run pytest tests -v` -> 18 passed.
   - Startup smoke: `uv run uvicorn server.app:app --host 127.0.0.1 --port 8780` + `curl http://127.0.0.1:8780/health` -> `{"status":"ok"}`.
+
+### Frontend prototype milestone 5 kickoff (hardening + mobile QA)
+- Read `docs/PLAN.md`, `docs/IMPLEMENTATION.md`, `docs/FRONTEND-PROTOTYPE-PLAN.md`, and `docs/FRONTEND-PROTOTYPE-IMPLEMENTATION.md` to align Milestone 5 scope and exit criteria.
+- Added Milestone 5 frontend tests first in `frontend-prototype/frontend/src/App.test.js`:
+  - clears stale transcript state when starting a new recording after a completed prior run
+  - disables non-essential controls (preview buttons) while transcription requests are in flight
+  - verifies browser request shape uses only local `/api/*` proxy routes with no provider auth headers
+- Confirmed red-first failures for new hardening requirements:
+  - stale transcript not cleared on new recording start
+  - preview controls remained enabled during active transcription
+- Implemented Milestone 5 hardening in `frontend-prototype/frontend/src/App.svelte`:
+  - added `requestInFlight` state to lock non-essential controls only during real network work (without breaking preview-mode state demos)
+  - cleared stale transcript and stale retry blob state on new recording start
+  - added retry guards/disabled states to prevent concurrent retry actions during active work
+- Expanded mobile e2e QA in `frontend-prototype/frontend/e2e/mobile-smoke.spec.js`:
+  - STT failure + `Retry STT` recovery flow
+  - control-lock assertions during in-flight transcription
+  - proxy-only network behavior assertion (no direct `api.mistral.ai` or `api.elevenlabs.io` calls; no browser provider auth headers)
+- Verification:
+  - `cd frontend-prototype/frontend && npm test` -> 23 passed.
+  - `cd frontend-prototype/frontend && npm run test:e2e` -> 12 passed (`Mobile Chrome`, `Mobile Safari`).
+  - `cd frontend-prototype/frontend && npm run build` -> succeeded.
+  - `cd frontend-prototype/server && uv run pytest tests -v` -> 18 passed.
+  - `cd frontend-prototype/frontend && rg -n "MISTRAL_API_KEY|ELEVENLABS_API_KEY|api\\.mistral\\.ai|api\\.elevenlabs\\.io|xi-api-key|Authorization" src dist --glob '!src/**/*.test.js'` -> no matches.
