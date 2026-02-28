@@ -625,6 +625,36 @@ describe('App milestone 3 STT integration', () => {
     }
   })
 
+  it('shows https-required error when microphone APIs are blocked by insecure context', async () => {
+    const getUserMedia = vi.fn().mockResolvedValue({ getTracks: () => [] })
+    const restoreMediaDevices = installMediaDevices(getUserMedia)
+    installRecorderMock()
+
+    const originalIsSecureContext = Object.getOwnPropertyDescriptor(window, 'isSecureContext')
+
+    try {
+      Object.defineProperty(window, 'isSecureContext', {
+        configurable: true,
+        value: false,
+      })
+
+      render(App)
+
+      await fireEvent.click(screen.getByRole('button', { name: 'Record' }))
+
+      expect(await screen.findByRole('heading', { name: 'Error' })).toBeInTheDocument()
+      expect(screen.getByText(/requires https/i)).toBeInTheDocument()
+      expect(getUserMedia).not.toHaveBeenCalled()
+    } finally {
+      if (originalIsSecureContext) {
+        Object.defineProperty(window, 'isSecureContext', originalIsSecureContext)
+      } else {
+        Reflect.deleteProperty(window, 'isSecureContext')
+      }
+      restoreMediaDevices()
+    }
+  })
+
   it('rejects very short recordings and does not call /api/stt', async () => {
     const restoreMediaDevices = installMediaDevices(vi.fn().mockResolvedValue({ getTracks: () => [] }))
     installRecorderMock({ chunkBytes: 4096 })

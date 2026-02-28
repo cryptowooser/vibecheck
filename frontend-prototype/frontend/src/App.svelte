@@ -135,6 +135,32 @@
     return ''
   }
 
+  function isSecureOrigin() {
+    if (typeof window.isSecureContext === 'boolean') {
+      return window.isSecureContext
+    }
+
+    const protocol = window.location?.protocol ?? ''
+    const hostname = window.location?.hostname ?? ''
+    if (protocol === 'https:') {
+      return true
+    }
+    return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1'
+  }
+
+  function getRecordingSupportError() {
+    if (!isSecureOrigin()) {
+      return 'Recording requires HTTPS on phones. Open this page over https:// (or localhost).'
+    }
+    if (!navigator.mediaDevices?.getUserMedia) {
+      return 'This browser cannot access the microphone from this page.'
+    }
+    if (typeof window.MediaRecorder === 'undefined') {
+      return 'This browser does not support recording with MediaRecorder.'
+    }
+    return ''
+  }
+
   async function loadVoices() {
     try {
       const response = await fetch('/api/voices')
@@ -156,8 +182,9 @@
     if (isRecording() || isRecordActionDisabled()) {
       return
     }
-    if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
-      setError('stt', 'This browser does not support recording.')
+    const supportError = getRecordingSupportError()
+    if (supportError) {
+      setError('stt', supportError)
       return
     }
 

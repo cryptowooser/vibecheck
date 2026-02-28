@@ -282,3 +282,20 @@
   - `cd frontend-prototype/server && uv run pytest tests -v` -> 18 passed.
 - Note:
   - Physical-device manual QA is still pending execution by a teammate with access to iOS Safari and Android Chrome hardware.
+
+### Frontend prototype phone recording diagnostics fix (insecure origin clarity)
+- Trigger: real-phone report that tapping `Record` showed generic error `This browser does not support recording.`
+- Added red-first unit test in `frontend-prototype/frontend/src/App.test.js`:
+  - `shows https-required error when microphone APIs are blocked by insecure context`.
+  - Captures common mobile dev case (`http://<LAN-IP>:5178`) where mic APIs are blocked by non-secure context.
+- Updated capability detection in `frontend-prototype/frontend/src/App.svelte`:
+  - added `isSecureOrigin()` check with localhost exemptions.
+  - added `getRecordingSupportError()` to map failure reason to specific user-facing messages:
+    - HTTPS required on phones
+    - microphone API unavailable
+    - MediaRecorder unavailable
+  - `startRecording()` now reports precise root cause instead of generic unsupported-browser text.
+- Verification:
+  - `cd frontend-prototype/frontend && npm test` -> 26 passed.
+  - `cd frontend-prototype/frontend && npm run build` -> succeeded.
+  - `cd frontend-prototype/frontend && npm run test:e2e` -> 14 passed (`Mobile Chrome`, `Mobile Safari`).
