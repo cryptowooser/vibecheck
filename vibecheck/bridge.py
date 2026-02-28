@@ -237,6 +237,7 @@ class SessionBridge:
             return False
         if not future.done():
             future.set_result({"approved": approved, "edited_args": edited_args})
+        self._settle_local_approval_state(approved=approved, edited_args=edited_args)
         self._set_state("running")
         self._broadcast_background(
             ApprovalResolutionEvent(call_id=call_id, approved=approved, edited_args=edited_args)
@@ -264,6 +265,7 @@ class SessionBridge:
             return False
         if not future.done():
             future.set_result(response)
+        self._settle_local_input_state(response=response)
         self._set_state("running")
         self._broadcast_background(InputResolutionEvent(request_id=request_id, response=response))
         return True
@@ -360,20 +362,18 @@ class SessionBridge:
     async def _approval_callback(
         self, tool_name: str, args: object, tool_call_id: str
     ) -> tuple[object, str | None]:
-        local_task: asyncio.Task[None] | None = None
         if self._local_approval_callback is not None:
-            local_task = asyncio.create_task(
-                self._resolve_with_local_approval(tool_name, args, tool_call_id)
+            self._track_task(
+                asyncio.create_task(
+                    self._resolve_with_local_approval(tool_name, args, tool_call_id)
+                )
             )
-            self._track_task(local_task)
 
         approval = await self.request_approval(
             call_id=tool_call_id,
             tool_name=tool_name,
             args=self._message_to_dict(args),
         )
-        if local_task is not None and not local_task.done():
-            local_task.cancel()
 
         runtime = self._vibe_runtime
         yes = runtime.approval_yes if runtime else "y"
@@ -392,14 +392,10 @@ class SessionBridge:
     async def _user_input_callback(self, args: object) -> object:
         question, options, prompts = self._extract_input_question(args)
         request_id = f"req-{uuid4().hex[:8]}"
-        local_task: asyncio.Task[None] | None = None
         if self._local_input_callback is not None:
-            local_task = asyncio.create_task(self._resolve_with_local_input(args, request_id))
-            self._track_task(local_task)
+            self._track_task(asyncio.create_task(self._resolve_with_local_input(args, request_id)))
 
         response = await self.request_input(request_id=request_id, question=question, options=options)
-        if local_task is not None and not local_task.done():
-            local_task.cancel()
 
         return self._build_input_result(response, prompts)
 
@@ -457,6 +453,30 @@ class SessionBridge:
                 return answer_text
 
         return ""
+
+    def _settle_local_approval_state(self, approved: bool, edited_args: dict | None = None) -> None:
+        callback = self._local_approval_callback
+        owner = getattr(callback, "__self__", None)
+        pending = getattr(owner, "_pending_approval", None)
+        if not isinstance(pending, asyncio.Future) or pending.done():
+            return
+
+        runtime = self._vibe_runtime
+        yes = runtime.approval_yes if runtime else "y"
+        no = runtime.approval_no if runtime else "n"
+        feedback: str | None = None
+        if edited_args is not None:
+            feedback = json.dumps(edited_args, ensure_ascii=True)
+        pending.set_result((yes if approved else no, feedback))
+
+    def _settle_local_input_state(self, response: str) -> None:
+        callback = self._local_input_callback
+        owner = getattr(callback, "__self__", None)
+        pending = getattr(owner, "_pending_question", None)
+        if not isinstance(pending, asyncio.Future) or pending.done():
+            return
+
+        pending.set_result(self._build_input_result(response, question_texts=[]))
 
     def _on_message_observed(self, message: object) -> None:
         message_id = getattr(message, "message_id", None)

@@ -7,6 +7,9 @@ cd "$ROOT_DIR"
 echo "=== Live Attach Integration Test ==="
 uv run pytest vibecheck/tests/test_live_attach.py -v
 
+echo "=== Launcher Wiring Smoke ==="
+uv run pytest vibecheck/tests/test_launcher.py::test_on_mount_rebinds_callbacks_and_intercepts_future_rebinds -v
+
 echo "=== Launcher Entry Point Smoke ==="
 uv run vibecheck-vibe --help >/dev/null
 

@@ -188,6 +188,13 @@ async def test_on_mount_rebinds_callbacks_and_intercepts_future_rebinds(
     assert loop.approval_callback.__func__ is bridge._approval_callback.__func__
     assert loop.user_input_callback.__func__ is bridge._user_input_callback.__func__
 
+    initial_local_approval = bridge.local_approval_callback
+    initial_local_input = bridge.local_input_callback
+    loop.set_approval_callback(bridge._approval_callback)
+    loop.set_user_input_callback(bridge._user_input_callback)
+    assert bridge.local_approval_callback is initial_local_approval
+    assert bridge.local_input_callback is initial_local_input
+
     loop.set_approval_callback(lambda *_args: ("no", None))
     loop.set_user_input_callback(lambda *_args: {"response": "later"})
     assert loop.approval_callback.__func__ is bridge._approval_callback.__func__

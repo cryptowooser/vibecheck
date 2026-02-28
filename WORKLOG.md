@@ -217,3 +217,23 @@
 - Verification run after fixes:
   - `uv run pytest vibecheck/tests/ -v` -> 59 passed.
   - `scripts/test_live_attach.sh` -> passed.
+
+### Phase 3 reviewer follow-up fixes (mobile-first race + method matching)
+- Fixed mobile-first resolution race in `vibecheck/bridge.py`:
+  - Removed cancellation of local callback tasks after REST resolution.
+  - Added local callback state settlement helpers to resolve Vibe TUI pending futures safely:
+    - `_settle_local_approval_state(...)` sets `_pending_approval` result when mobile resolves first.
+    - `_settle_local_input_state(...)` sets `_pending_question` result when mobile resolves first.
+  - Wired settlement into `resolve_approval(...)` and `resolve_input(...)`.
+- Fixed interceptor bound-method comparison in `vibecheck/launcher.py`:
+  - Added `_callbacks_match(...)` helper using `__func__` + `__self__` semantics instead of identity-only `is`.
+  - Prevents self-referential local fallback assignment when callback passed is bridge callback.
+- Strengthened test coverage:
+  - Added `test_mobile_resolution_does_not_leave_local_pending_state_stuck` in `vibecheck/tests/test_bridge.py`.
+  - Extended launcher callback interception test in `vibecheck/tests/test_launcher.py` to assert bridge callback re-registration does not overwrite local fallback callbacks.
+- Improved `scripts/test_live_attach.sh` smoke flow:
+  - Added launcher wiring smoke test (`test_on_mount_rebinds_callbacks_and_intercepts_future_rebinds`) so the script now exercises callback interception behavior, not only `--help`.
+- Verification run after follow-up:
+  - `uv run pytest vibecheck/tests/test_bridge.py vibecheck/tests/test_launcher.py vibecheck/tests/test_tui_bridge.py -v` -> passed.
+  - `scripts/test_live_attach.sh` -> passed.
+  - `uv run pytest vibecheck/tests/ -v` -> 60 passed.

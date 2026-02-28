@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 from pydantic import BaseModel, ConfigDict
 
-from vibecheck.bridge import SessionBridge, SessionManager
+from vibecheck.bridge import SessionBridge, SessionManager, VibeRuntime
 from vibecheck.events import AssistantEvent
 
 
@@ -551,3 +551,53 @@ async def test_local_callbacks_can_resolve_approval_and_input_without_rest(
     assert "approval_resolution" in event_types
     assert "input_request" in event_types
     assert "input_resolution" in event_types
+
+
+@pytest.mark.asyncio
+async def test_mobile_resolution_does_not_leave_local_pending_state_stuck() -> None:
+    class CancellationSensitiveOwner:
+        def __init__(self) -> None:
+            self._pending_approval = None
+            self._pending_question = None
+
+        async def approval_callback(self, _tool: str, _args: object, _call_id: str):
+            self._pending_approval = asyncio.get_running_loop().create_future()
+            result = await self._pending_approval
+            self._pending_approval = None
+            return result
+
+        async def input_callback(self, _args: object):
+            self._pending_question = asyncio.get_running_loop().create_future()
+            result = await self._pending_question
+            self._pending_question = None
+            return result
+
+    owner = CancellationSensitiveOwner()
+    manager = RecordingConnectionManager()
+    bridge = SessionBridge("mobile-first", connection_manager=manager)
+    loop = FakeAgentLoop(FakeVibeConfig.load())
+    runtime = VibeRuntime(
+        agent_loop_cls=FakeAgentLoop,
+        vibe_config_cls=FakeVibeConfig,
+        approval_yes=FakeApprovalResponse.YES,
+        approval_no=FakeApprovalResponse.NO,
+        ask_result_cls=FakeAskUserQuestionResult,
+        answer_cls=FakeAnswer,
+    )
+    bridge.attach_to_loop(
+        loop,
+        runtime,
+        approval_callback=owner.approval_callback,
+        input_callback=owner.input_callback,
+    )
+
+    assert bridge.inject_message("mobile first")
+    await _wait_until(lambda: "tc-1" in bridge.pending_approval)
+    assert bridge.resolve_approval("tc-1", approved=True)
+    await _wait_until(lambda: owner._pending_approval is None)
+
+    await _wait_until(lambda: len(bridge.pending_input) == 1)
+    request_id = next(iter(bridge.pending_input.keys()))
+    assert bridge.resolve_input(request_id=request_id, response="yes")
+    await _wait_until(lambda: owner._pending_question is None)
+    await _wait_until(lambda: bridge.state == "idle")

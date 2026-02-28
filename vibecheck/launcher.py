@@ -93,6 +93,21 @@ class VibeCheckApp(_BaseVibeApp):
         self._set_approval_callback_original: Callable[[object], object] | None = None
         self._set_user_input_callback_original: Callable[[object], object] | None = None
 
+    @staticmethod
+    def _callbacks_match(candidate: object, target: object) -> bool:
+        if candidate is target:
+            return True
+        candidate_func = getattr(candidate, "__func__", None)
+        target_func = getattr(target, "__func__", None)
+        candidate_self = getattr(candidate, "__self__", None)
+        target_self = getattr(target, "__self__", None)
+        return (
+            candidate_func is not None
+            and target_func is not None
+            and candidate_func is target_func
+            and candidate_self is target_self
+        )
+
     def _bind_bridge_callbacks(self) -> None:
         approval_callback = getattr(self.agent_loop, "approval_callback", None)
         input_callback = getattr(self.agent_loop, "user_input_callback", None)
@@ -116,7 +131,7 @@ class VibeCheckApp(_BaseVibeApp):
         self._set_user_input_callback_original = set_input
 
         def intercepted_set_approval(callback: object) -> object:
-            if callback is not self._bridge._approval_callback:  # noqa: SLF001
+            if not self._callbacks_match(callback, self._bridge._approval_callback):  # noqa: SLF001
                 self._bridge.configure_local_callbacks(
                     approval_callback=callback if callable(callback) else None,
                     input_callback=self._bridge.local_input_callback,
@@ -124,7 +139,7 @@ class VibeCheckApp(_BaseVibeApp):
             return self._set_approval_callback_original(self._bridge._approval_callback)
 
         def intercepted_set_user_input(callback: object) -> object:
-            if callback is not self._bridge._user_input_callback:  # noqa: SLF001
+            if not self._callbacks_match(callback, self._bridge._user_input_callback):  # noqa: SLF001
                 self._bridge.configure_local_callbacks(
                     approval_callback=self._bridge.local_approval_callback,
                     input_callback=callback if callable(callback) else None,
