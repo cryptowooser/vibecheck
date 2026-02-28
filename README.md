@@ -1332,7 +1332,7 @@ async for event in client.audio.realtime.transcribe_stream(
 
 ## Implementation Plan
 
-> **Source of truth:** [docs/PLAN.md](docs/PLAN.md) (layer-based architecture) and [docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md) (WU-01 through WU-31, phased execution with parallelism).
+> **Source of truth:** [docs/PLAN.md](docs/PLAN.md) (layer-based architecture) and [docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md) (WU-01 through WU-34, phased execution with parallelism).
 >
 > The legacy phase list that was here has been replaced. See those docs for the current work breakdown.
 

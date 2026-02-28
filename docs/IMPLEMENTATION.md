@@ -1019,20 +1019,36 @@ uv run pytest vibecheck/tests/test_tui_bridge.py vibecheck/tests/test_launcher.p
 Run the full acceptance test against a real Vibe installation. This is the test that unit tests cannot perform.
 
 - [ ] Start `vibecheck-vibe` with real Vibe installed
-- [ ] Trigger a tool call that requires approval
-- [ ] Approve from phone (REST API or PWA)
-- [ ] **Verify checklist:**
+- [ ] **Approval flow (primary):**
+  - [ ] Trigger a tool call that requires approval
+  - [ ] Approve from phone (REST API or PWA)
   - [ ] Agent continues after mobile approval
-  - [ ] Terminal exits approval/question UI back to normal input (WU-32 fix)
+  - [ ] Terminal exits approval UI back to normal input (WU-32 fix)
+- [ ] **Question/input flow (second callback surface):**
+  - [ ] Trigger an `ask_user_question` prompt (e.g., a tool that asks for confirmation)
+  - [ ] Respond from phone (REST API or PWA)
+  - [ ] Terminal exits question UI back to normal input (WU-32 fix)
+  - [ ] No stuck `_pending_question` future or orphaned question widget
+- [ ] **Remote injection:**
+  - [ ] Send a message from phone while at the terminal
   - [ ] Phone-injected user prompt is visible in terminal (or explicitly documented as known limitation per WU-33)
   - [ ] Loading widget behavior is acceptable (or documented per WU-33)
-  - [ ] No stuck tasks, no orphaned futures, no visual artifacts
-- [ ] Log results in WORKLOG.md
+- [ ] **Reconnect/background (coffee-walk condition):**
+  - [ ] Phone disconnects (close browser tab or lose connectivity) while approval is pending
+  - [ ] Phone reconnects (reopen tab)
+  - [ ] Pending approval state is visible on reconnect (backlog delivery)
+  - [ ] Approve from phone after reconnect → agent continues, TUI updates
+- [ ] **Cross-check:** No stuck tasks, no orphaned futures, no visual artifacts after all scenarios
+- [ ] **Evidence requirements:**
+  - [ ] Timestamped command log (terminal session transcript or `script` output)
+  - [ ] Short screen recording or screenshots of TUI before/after remote approval
+  - [ ] Exact commit hash and Vibe version used
+  - [ ] Pass/fail for each checklist item logged in WORKLOG.md
 
 **Verify:**
 ```bash
 # Manual test — no automated verification possible
-# Document pass/fail for each checklist item in WORKLOG.md
+# All evidence artifacts must be committed or linked in WORKLOG.md
 ```
 
 ---

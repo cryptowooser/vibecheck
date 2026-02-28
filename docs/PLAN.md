@@ -131,6 +131,7 @@ Phone (PWA via WSS) ─────┘
   - Mobile approves via REST → bridge resolves Future → TUI updates
   - TUI approves via keyboard → bridge resolves Future → mobile updates via WebSocket
   - Both surfaces show pending state; first to respond wins
+  - **Status:** Bridge-level dual-surface resolution validated (60 tests). TUI visual cleanup after remote resolution requires Phase 3.1 (WU-32/WU-34) — see below.
 
 > **Fallback:** If VibeApp subclassing proves unworkable, fall back to tmux/PTY sidecar (Option C in `docs/ANALYSIS-session-attachment.md`). Brittle but demoable.
 
@@ -365,7 +366,7 @@ L6      Session/diff APIs                    Settings + theme + diff view   ✅ 
 L7+     Stretch backend                      Stretch frontend               ✅ fully
 ```
 
-> **Note:** L1.5 is a backend-only layer (no frontend changes). After L1.5 + L2, layers L3/L4a/L4b/L5/L6 are independent branches — the team can tackle them in any order or split across them freely.
+> **Note:** L1.5 is a backend-only layer (no frontend changes). After L1.5 + Phase 3.1 (TUI hardening) + L2, layers L3/L4a/L4b/L5/L6 are independent branches — the team can tackle them in any order or split across them freely.
 
 ---
 
@@ -373,7 +374,7 @@ L7+     Stretch backend                      Stretch frontend               ✅ 
 
 These are moments where parallel tracks must sync and test together.
 
-### Integration #1: First Live Mobile Demo (after L1.5 + L2)
+### Integration #1: First Live Mobile Demo (after L1.5 + Phase 3.1 + L2)
 
 **What:** Track A's WebSocket + events + callbacks connected to Track B's chat UI on Track C's EC2 instance.
 
@@ -429,7 +430,7 @@ L0 Foundation ──────────────────────
   │     │           └── L9 Smart Autonomy & Showmanship (stretch) ─────
 ```
 
-Note: L1.5 is a prerequisite for all higher layers (it provides the live attach capability). L3, L4a, L5, L6 are **independent of each other** — they all branch from L1.5/L2. L4b depends on L4a. After L1.5 + L2 are working, the team can split across these features in any order.
+Note: L1.5 + Phase 3.1 (TUI hardening) are prerequisites for all higher layers (they provide live attach with correct TUI behavior). L3, L4a, L5, L6 are **independent of each other** — they all branch from L1.5/L2. L4b depends on L4a. After L1.5 + Phase 3.1 + L2 are working, the team can split across these features in any order.
 
 ---
 
