@@ -155,3 +155,15 @@
   - Updated: ToC, dependency graph, constraints table, WU table, parallelism map, directory structure
   - Added new files to directory structure: `tui_bridge.py`, `launcher.py`, `test_tui_bridge.py`, `test_launcher.py`, `test_live_attach.py`
 - All 44 existing tests pass after changes (doc-only commit, no code changes).
+
+### Reviewer 2 + Reviewer 3 findings on Phase 3 doc insertion
+- Fixed 7 findings from Reviewer 2 and additional feedback from Reviewer 3:
+  1. **Blocker fixed:** Normalized `act()` ownership — bridge is sole consumer in all modes (live + managed). Removed contradictory "TUI drives act() initially" language from IMPLEMENTATION.md.
+  2. **High fixed:** Integration/deploy steps now reference `vibecheck-vibe` as primary startup path, with `python -m vibecheck` as standalone fallback.
+  3. **High fixed:** Clarified discovered sessions are `observe_only` — live control requires sessions started via `vibecheck-vibe`. Added explicit notes in PLAN.md (L1 SessionManager, Open Questions) and IMPLEMENTATION.md (WU-12).
+  4. **Medium fixed:** Gate labels corrected — Integration #1 says "after L1.5 + L2", stretch WUs reference Phase 5 gate.
+  5. **Medium fixed:** Added `controllable` property alongside `attach_mode` in PLAN.md and IMPLEMENTATION.md — derived from mode, used by frontend to show/hide controls.
+  6. **Medium fixed:** Normalized approval surface — both TUI keyboard and mobile REST can resolve pending approvals (first response wins). Per Reviewer 3: this is required for "go back and forth" UX, not stretch.
+  7. **Low fixed:** Updated WU range from WU-27 to WU-31 in README.md and AGENTS.md.
+- Added explicit Textual + uvicorn spike step in WU-27 (highest technical risk).
+- Files changed: `docs/ANALYSIS-session-attachment.md`, `docs/PLAN.md`, `docs/IMPLEMENTATION.md`, `README.md`, `AGENTS.md`
