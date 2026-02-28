@@ -5,6 +5,7 @@ from dataclasses import dataclass
 import inspect
 from importlib import import_module
 import json
+import logging
 from collections import deque
 from pathlib import Path
 import sys
@@ -27,6 +28,9 @@ from vibecheck.events import (
 BridgeState = Literal["idle", "running", "waiting_approval", "waiting_input", "disconnected"]
 AttachMode = Literal["live", "replay", "observe_only", "managed"]
 EventListener = Callable[[Event], object]
+RawEventListener = Callable[[object], object]
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -91,6 +95,7 @@ class SessionBridge:
         self.connection_manager = connection_manager
         self.messages_to_inject: list[str] = []
         self._event_listeners: set[EventListener] = set()
+        self._raw_event_listeners: set[RawEventListener] = set()
 
         self._background_tasks: set[asyncio.Task[object]] = set()
         self._message_queue: asyncio.Queue[str] = asyncio.Queue()
@@ -100,16 +105,41 @@ class SessionBridge:
         self._vibe_runtime: VibeRuntime | None = None
         self._observed_message_ids: set[str] = set()
         self._message_observer_hooked = False
+        self._local_approval_callback: Callable[[str, object, str], object] | None = None
+        self._local_input_callback: Callable[[object], object] | None = None
 
     @property
     def controllable(self) -> bool:
         return self.attach_mode != "observe_only"
+
+    @property
+    def local_approval_callback(self) -> Callable[[str, object, str], object] | None:
+        return self._local_approval_callback
+
+    @property
+    def local_input_callback(self) -> Callable[[object], object] | None:
+        return self._local_input_callback
 
     def add_event_listener(self, listener: EventListener) -> None:
         self._event_listeners.add(listener)
 
     def remove_event_listener(self, listener: EventListener) -> None:
         self._event_listeners.discard(listener)
+
+    def add_raw_event_listener(self, listener: RawEventListener) -> None:
+        self._raw_event_listeners.add(listener)
+
+    def remove_raw_event_listener(self, listener: RawEventListener) -> None:
+        self._raw_event_listeners.discard(listener)
+
+    def configure_local_callbacks(
+        self,
+        *,
+        approval_callback: Callable[[str, object, str], object] | None,
+        input_callback: Callable[[object], object] | None,
+    ) -> None:
+        self._local_approval_callback = approval_callback
+        self._local_input_callback = input_callback
 
     async def _notify_event_listeners(self, event: Event) -> None:
         for listener in list(self._event_listeners):
@@ -118,7 +148,7 @@ class SessionBridge:
                 if inspect.isawaitable(result):
                     await result
             except Exception:
-                continue
+                logger.exception("Bridge event listener failed for session %s", self.session_id)
 
     def _notify_event_listeners_background(self, event: Event) -> None:
         if not self._event_listeners:
@@ -133,11 +163,23 @@ class SessionBridge:
                     if inspect.isawaitable(result):
                         continue
                 except Exception:
-                    continue
+                    logger.exception(
+                        "Bridge event listener failed outside running loop for session %s",
+                        self.session_id,
+                    )
             return
 
         task = loop.create_task(self._notify_event_listeners(event))
         self._track_task(task)
+
+    async def _notify_raw_event_listeners(self, event: object) -> None:
+        for listener in list(self._raw_event_listeners):
+            try:
+                result = listener(event)
+                if inspect.isawaitable(result):
+                    await result
+            except Exception:
+                logger.exception("Bridge raw event listener failed for session %s", self.session_id)
 
     async def _broadcast(self, event: Event) -> None:
         self.add_event(event)
@@ -318,11 +360,21 @@ class SessionBridge:
     async def _approval_callback(
         self, tool_name: str, args: object, tool_call_id: str
     ) -> tuple[object, str | None]:
+        local_task: asyncio.Task[None] | None = None
+        if self._local_approval_callback is not None:
+            local_task = asyncio.create_task(
+                self._resolve_with_local_approval(tool_name, args, tool_call_id)
+            )
+            self._track_task(local_task)
+
         approval = await self.request_approval(
             call_id=tool_call_id,
             tool_name=tool_name,
             args=self._message_to_dict(args),
         )
+        if local_task is not None and not local_task.done():
+            local_task.cancel()
+
         runtime = self._vibe_runtime
         yes = runtime.approval_yes if runtime else "y"
         no = runtime.approval_no if runtime else "n"
@@ -340,8 +392,71 @@ class SessionBridge:
     async def _user_input_callback(self, args: object) -> object:
         question, options, prompts = self._extract_input_question(args)
         request_id = f"req-{uuid4().hex[:8]}"
+        local_task: asyncio.Task[None] | None = None
+        if self._local_input_callback is not None:
+            local_task = asyncio.create_task(self._resolve_with_local_input(args, request_id))
+            self._track_task(local_task)
+
         response = await self.request_input(request_id=request_id, question=question, options=options)
+        if local_task is not None and not local_task.done():
+            local_task.cancel()
+
         return self._build_input_result(response, prompts)
+
+    async def _resolve_with_local_approval(
+        self,
+        tool_name: str,
+        args: object,
+        tool_call_id: str,
+    ) -> None:
+        callback = self._local_approval_callback
+        if callback is None:
+            return
+
+        try:
+            result = callback(tool_name, args, tool_call_id)
+            if inspect.isawaitable(result):
+                result = await result
+            if not isinstance(result, tuple) or not result:
+                return
+            verdict = result[0]
+
+            runtime = self._vibe_runtime
+            yes = runtime.approval_yes if runtime else "y"
+            approved = verdict == yes
+            self.resolve_approval(tool_call_id, approved=approved)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Local approval callback failed for session %s", self.session_id)
+
+    async def _resolve_with_local_input(self, args: object, request_id: str) -> None:
+        callback = self._local_input_callback
+        if callback is None:
+            return
+
+        try:
+            result = callback(args)
+            if inspect.isawaitable(result):
+                result = await result
+            response = self._extract_local_input_response(result)
+            self.resolve_input(request_id=request_id, response=response)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Local input callback failed for session %s", self.session_id)
+
+    def _extract_local_input_response(self, result: object) -> str:
+        if isinstance(result, str):
+            return result
+
+        answers = getattr(result, "answers", None)
+        if isinstance(answers, list) and answers:
+            answer_text = getattr(answers[0], "answer", None)
+            if isinstance(answer_text, str):
+                return answer_text
+
+        return ""
 
     def _on_message_observed(self, message: object) -> None:
         message_id = getattr(message, "message_id", None)
@@ -417,14 +532,26 @@ class SessionBridge:
             return
 
         existing = getattr(agent_loop, "message_observer", None)
+        existing_message_list_observer = None
+        message_list = getattr(agent_loop, "messages", None)
+        if message_list is not None:
+            existing_message_list_observer = getattr(message_list, "_observer", None)
 
         def chained(message: object) -> None:
             self._on_message_observed(message)
             if callable(existing) and existing is not self._on_message_observed:
                 existing(message)
+            if (
+                callable(existing_message_list_observer)
+                and existing_message_list_observer is not self._on_message_observed
+                and existing_message_list_observer is not existing
+            ):
+                existing_message_list_observer(message)
 
         try:
             setattr(agent_loop, "message_observer", chained)
+            if message_list is not None and hasattr(message_list, "_observer"):
+                setattr(message_list, "_observer", chained)
             self._message_observer_hooked = True
         except Exception:
             self._message_observer_hooked = False
@@ -433,11 +560,18 @@ class SessionBridge:
         self,
         agent_loop: object,
         vibe_runtime: VibeRuntime | None = None,
+        *,
+        approval_callback: Callable[[str, object, str], object] | None = None,
+        input_callback: Callable[[object], object] | None = None,
     ) -> None:
         self._agent_loop = agent_loop
         self._message_observer_hooked = False
         if vibe_runtime is not None:
             self._vibe_runtime = vibe_runtime
+        self.configure_local_callbacks(
+            approval_callback=approval_callback,
+            input_callback=input_callback,
+        )
         self.attach_mode = "live"
         self._wire_callbacks(agent_loop)
         self._wire_message_observer(agent_loop)
@@ -461,6 +595,7 @@ class SessionBridge:
             )
 
         self.attach_mode = "managed"
+        self.configure_local_callbacks(approval_callback=None, input_callback=None)
         self._message_observer_hooked = False
         self._wire_callbacks(agent_loop)
         self._wire_message_observer(agent_loop)
@@ -475,6 +610,7 @@ class SessionBridge:
         async with self._run_lock:
             try:
                 async for raw_event in self._agent_loop.act(content):
+                    await self._notify_raw_event_listeners(raw_event)
                     event = self._convert_vibe_event(raw_event)
                     if event is not None:
                         await self._broadcast(event)

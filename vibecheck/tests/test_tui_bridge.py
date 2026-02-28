@@ -49,6 +49,21 @@ async def test_tui_bridge_forwards_event_to_textual_handler() -> None:
 
 
 @pytest.mark.asyncio
+async def test_tui_bridge_forwards_raw_event_to_textual_handler() -> None:
+    class RawEvent:
+        type = "raw_event"
+
+    handler = RecordingEventHandler()
+    bridge = TuiBridge(handler)
+
+    await bridge.on_bridge_raw_event(RawEvent())
+
+    assert len(handler.events) == 1
+    event, _kwargs = handler.events[0]
+    assert event.type == "raw_event"
+
+
+@pytest.mark.asyncio
 async def test_session_bridge_tees_events_to_websocket_and_tui() -> None:
     manager = RecordingConnectionManager()
     session_bridge = SessionBridge("s1", connection_manager=manager)

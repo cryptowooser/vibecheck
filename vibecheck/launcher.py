@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import argparse
+import inspect
 import sys
-from typing import Any
+from typing import Any, Callable
 
 import uvicorn
 
 from vibecheck.app import create_app
-from vibecheck.bridge import load_vibe_runtime, session_manager
+from vibecheck.bridge import SessionBridge, VibeRuntime, load_vibe_runtime, session_manager
 from vibecheck.tui_bridge import TuiBridge
 
 
@@ -58,6 +59,7 @@ except Exception:  # pragma: no cover - covered via tests using fake app class
 
     class _BaseVibeApp:  # type: ignore[override]
         def __init__(self, *_args: Any, **_kwargs: Any) -> None:
+            self.agent_loop = _kwargs.get("agent_loop")
             self.event_handler = None
             self._loading_widget = None
 
@@ -66,6 +68,10 @@ except Exception:  # pragma: no cover - covered via tests using fake app class
 
         def run_worker(self, _worker: Any, *, exclusive: bool = False) -> None:
             _ = exclusive
+            if inspect.isawaitable(_worker):
+                close = getattr(_worker, "close", None)
+                if callable(close):
+                    close()
 
 
 class VibeCheckApp(_BaseVibeApp):
@@ -83,10 +89,57 @@ class VibeCheckApp(_BaseVibeApp):
         self._ws_port = ws_port
         self._api_app = api_app
         self._tui_bridge: TuiBridge | None = None
+        self._server: uvicorn.Server | None = None
+        self._set_approval_callback_original: Callable[[object], object] | None = None
+        self._set_user_input_callback_original: Callable[[object], object] | None = None
+
+    def _bind_bridge_callbacks(self) -> None:
+        approval_callback = getattr(self.agent_loop, "approval_callback", None)
+        input_callback = getattr(self.agent_loop, "user_input_callback", None)
+
+        self._bridge.attach_to_loop(
+            self.agent_loop,
+            approval_callback=approval_callback,
+            input_callback=input_callback,
+        )
+
+    def _install_callback_interceptors(self) -> None:
+        if self._set_approval_callback_original is not None:
+            return
+
+        set_approval = getattr(self.agent_loop, "set_approval_callback", None)
+        set_input = getattr(self.agent_loop, "set_user_input_callback", None)
+        if not callable(set_approval) or not callable(set_input):
+            return
+
+        self._set_approval_callback_original = set_approval
+        self._set_user_input_callback_original = set_input
+
+        def intercepted_set_approval(callback: object) -> object:
+            if callback is not self._bridge._approval_callback:  # noqa: SLF001
+                self._bridge.configure_local_callbacks(
+                    approval_callback=callback if callable(callback) else None,
+                    input_callback=self._bridge.local_input_callback,
+                )
+            return self._set_approval_callback_original(self._bridge._approval_callback)
+
+        def intercepted_set_user_input(callback: object) -> object:
+            if callback is not self._bridge._user_input_callback:  # noqa: SLF001
+                self._bridge.configure_local_callbacks(
+                    approval_callback=self._bridge.local_approval_callback,
+                    input_callback=callback if callable(callback) else None,
+                )
+            return self._set_user_input_callback_original(self._bridge._user_input_callback)
+
+        setattr(self.agent_loop, "set_approval_callback", intercepted_set_approval)
+        setattr(self.agent_loop, "set_user_input_callback", intercepted_set_user_input)
 
     async def on_mount(self) -> None:
         if hasattr(super(), "on_mount"):
             await super().on_mount()
+
+        self._bind_bridge_callbacks()
+        self._install_callback_interceptors()
 
         if getattr(self, "event_handler", None) is not None:
             self._tui_bridge = TuiBridge(
@@ -94,30 +147,44 @@ class VibeCheckApp(_BaseVibeApp):
                 loading_state_getter=lambda: getattr(self, "_loading_widget", None) is not None,
                 loading_widget_getter=lambda: getattr(self, "_loading_widget", None),
             )
-            self._bridge.add_event_listener(self._tui_bridge.on_bridge_event)
+            self._bridge.add_raw_event_listener(self._tui_bridge.on_bridge_raw_event)
 
         if hasattr(self, "run_worker"):
             self.run_worker(self._run_server(), exclusive=False)
 
     async def _run_server(self) -> None:
         config = build_uvicorn_config(self._api_app, self._ws_port)
-        server = uvicorn.Server(config)
-        await server.serve()
+        self._server = uvicorn.Server(config)
+        try:
+            await self._server.serve()
+        finally:
+            self._server = None
 
     async def _handle_agent_loop_turn(self, prompt: str) -> None:
-        self._bridge.inject_message(prompt)
+        injected = self._bridge.inject_message(prompt)
+        if injected:
+            return
+
+        # Keep a visible failure path in the terminal when bridge injection fails.
+        if hasattr(self, "notify"):
+            self.notify("Bridge failed to inject message", severity="error")
 
     async def on_unmount(self) -> None:
         if self._tui_bridge is not None:
-            self._bridge.remove_event_listener(self._tui_bridge.on_bridge_event)
+            self._bridge.remove_raw_event_listener(self._tui_bridge.on_bridge_raw_event)
             self._tui_bridge = None
+        if self._server is not None:
+            self._server.should_exit = True
 
         if hasattr(super(), "on_unmount"):
             await super().on_unmount()
 
 
-def _build_agent_loop(vibe_args: argparse.Namespace):
-    runtime = load_vibe_runtime()
+def _build_agent_loop(
+    vibe_args: argparse.Namespace,
+    runtime: VibeRuntime,
+    message_observer: Callable[[object], None] | None = None,
+):
     config = runtime.vibe_config_cls.load()
 
     enabled_tools = getattr(vibe_args, "enabled_tools", None)
@@ -128,21 +195,33 @@ def _build_agent_loop(vibe_args: argparse.Namespace):
         "agent_name": getattr(vibe_args, "agent", "default"),
         "enable_streaming": True,
     }
+    if message_observer is not None:
+        kwargs["message_observer"] = message_observer
 
     try:
         loop = runtime.agent_loop_cls(config, **kwargs)
     except TypeError:
         loop = runtime.agent_loop_cls(config)
 
-    return loop, runtime
+    return loop
 
 
 def launch(argv: list[str] | None = None) -> None:
     vibe_args, ws_port = parse_launcher_args(argv)
-    agent_loop, runtime = _build_agent_loop(vibe_args)
+    runtime = load_vibe_runtime()
+    bridge = SessionBridge(
+        session_id="live-bootstrap",
+        connection_manager=session_manager.connection_manager,
+        attach_mode="live",
+    )
+    agent_loop = _build_agent_loop(vibe_args, runtime, message_observer=bridge._on_message_observed)
 
     session_id = str(getattr(agent_loop, "session_id", "live-session"))
-    bridge = session_manager.attach(session_id, attach_mode="live")
+    bridge.session_id = session_id
+    existing = session_manager.sessions.get(session_id)
+    if existing is not None and existing is not bridge:
+        existing.stop()
+    session_manager.sessions[session_id] = bridge
     bridge.attach_to_loop(agent_loop, runtime)
 
     api_app = create_app()

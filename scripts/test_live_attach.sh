@@ -7,6 +7,9 @@ cd "$ROOT_DIR"
 echo "=== Live Attach Integration Test ==="
 uv run pytest vibecheck/tests/test_live_attach.py -v
 
+echo "=== Launcher Entry Point Smoke ==="
+uv run vibecheck-vibe --help >/dev/null
+
 echo "=== Backend Startup Smoke ==="
 uv run python -m vibecheck >/tmp/vibecheck-live-attach.log 2>&1 &
 PID=$!

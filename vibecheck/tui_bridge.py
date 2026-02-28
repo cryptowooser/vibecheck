@@ -3,9 +3,6 @@ from __future__ import annotations
 import inspect
 from typing import Any, Callable
 
-from vibecheck.events import Event
-
-
 class TuiBridge:
     """Adapts SessionBridge events to a Textual-style event handler."""
 
@@ -20,7 +17,7 @@ class TuiBridge:
         self._loading_state_getter = loading_state_getter or (lambda: False)
         self._loading_widget_getter = loading_widget_getter or (lambda: None)
 
-    async def on_bridge_event(self, event: Event) -> None:
+    async def _dispatch(self, event: object) -> None:
         handle_event = getattr(self._event_handler, "handle_event", None)
         if not callable(handle_event):
             raise TypeError("event_handler must define a callable handle_event(event, **kwargs)")
@@ -32,3 +29,9 @@ class TuiBridge:
         )
         if inspect.isawaitable(maybe_awaitable):
             await maybe_awaitable
+
+    async def on_bridge_event(self, event: object) -> None:
+        await self._dispatch(event)
+
+    async def on_bridge_raw_event(self, event: object) -> None:
+        await self._dispatch(event)

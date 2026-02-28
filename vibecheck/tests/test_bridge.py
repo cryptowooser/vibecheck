@@ -468,3 +468,86 @@ async def test_attach_to_loop_uses_existing_loop_for_message_injection(
     assert "tool_call" in event_types
     assert "tool_result" in event_types
     assert "assistant" in event_types
+
+
+@pytest.mark.asyncio
+async def test_raw_event_listener_receives_unconverted_agent_events(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import vibecheck.bridge as bridge_module
+
+    runtime = bridge_module.VibeRuntime(
+        agent_loop_cls=FakeAgentLoop,
+        vibe_config_cls=FakeVibeConfig,
+        approval_yes=FakeApprovalResponse.YES,
+        approval_no=FakeApprovalResponse.NO,
+        ask_result_cls=FakeAskUserQuestionResult,
+        answer_cls=FakeAnswer,
+    )
+    monkeypatch.setattr(bridge_module, "load_vibe_runtime", lambda: runtime)
+
+    bridge = SessionBridge("raw-events")
+    raw_kinds: list[str] = []
+
+    async def record_raw(event: object) -> None:
+        raw_kinds.append(event.__class__.__name__)
+
+    bridge.add_raw_event_listener(record_raw)
+    assert bridge.inject_message("hello raw")
+    await _wait_until(lambda: "tc-1" in bridge.pending_approval)
+    assert bridge.resolve_approval("tc-1", approved=True)
+    await _wait_until(lambda: len(bridge.pending_input) == 1)
+    request_id = next(iter(bridge.pending_input.keys()))
+    assert bridge.resolve_input(request_id=request_id, response="yes")
+    await _wait_until(lambda: bridge.state == "idle")
+
+    assert "FakeUserMessageEvent" in raw_kinds
+    assert "FakeToolCallEvent" in raw_kinds
+    assert "FakeToolResultEvent" in raw_kinds
+
+    bridge.stop()
+
+
+@pytest.mark.asyncio
+async def test_local_callbacks_can_resolve_approval_and_input_without_rest(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import vibecheck.bridge as bridge_module
+
+    runtime = bridge_module.VibeRuntime(
+        agent_loop_cls=FakeAgentLoop,
+        vibe_config_cls=FakeVibeConfig,
+        approval_yes=FakeApprovalResponse.YES,
+        approval_no=FakeApprovalResponse.NO,
+        ask_result_cls=FakeAskUserQuestionResult,
+        answer_cls=FakeAnswer,
+    )
+    monkeypatch.setattr(bridge_module, "load_vibe_runtime", lambda: runtime)
+
+    manager = RecordingConnectionManager()
+    bridge = SessionBridge("local-callbacks", connection_manager=manager)
+    loop = FakeAgentLoop(FakeVibeConfig.load())
+
+    async def local_approval(_tool: str, _args: object, _call_id: str) -> tuple[str, None]:
+        return (FakeApprovalResponse.YES, None)
+
+    async def local_input(_args: object) -> str:
+        return "yes"
+
+    bridge.attach_to_loop(
+        loop,
+        runtime,
+        approval_callback=local_approval,
+        input_callback=local_input,
+    )
+
+    assert bridge.inject_message("handled locally")
+    await _wait_until(lambda: bridge.state == "idle")
+    assert bridge.pending_approval == {}
+    assert bridge.pending_input == {}
+
+    event_types = [event["type"] for _, event in manager.events]
+    assert "approval_request" in event_types
+    assert "approval_resolution" in event_types
+    assert "input_request" in event_types
+    assert "input_resolution" in event_types

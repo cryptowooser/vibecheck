@@ -192,3 +192,28 @@
   - `uv run pytest vibecheck/tests/ -v` -> 54 passed.
   - `scripts/test_live_attach.sh` -> passed.
   - `uv run python -m vibecheck` startup smoke + `curl /api/health` -> `{\"status\":\"ok\"}`.
+
+### Phase 3 reviewer feedback fixes (callback ownership + raw event tee)
+- Addressed Reviewer 1/2 blocker on callback ownership in `vibecheck/launcher.py`:
+  - `VibeCheckApp.on_mount()` now rebinds bridge callbacks after `super().on_mount()`.
+  - Added callback interceptors on `agent_loop.set_approval_callback` / `set_user_input_callback` so future rebinds (including agent switches) keep bridge ownership while preserving TUI callbacks as local fallback resolvers.
+- Addressed event type mismatch for TUI tee:
+  - Added raw event listener channel in `SessionBridge` (`add_raw_event_listener`, `_notify_raw_event_listeners`).
+  - `_run_agent_turn()` now fans out raw AgentLoop events to raw listeners before conversion for WebSocket payloads.
+  - `VibeCheckApp` now connects TUI bridge via raw channel, so Textual `EventHandler` receives upstream Vibe event objects.
+- Hardened bridge callback orchestration:
+  - Added optional local callback racing in `SessionBridge` so local TUI approval/input callbacks can resolve the same pending futures (first response wins behavior).
+  - Extended message observer wiring to also patch `agent_loop.messages._observer` when present.
+  - Replaced silent listener exception swallowing with logger-backed exceptions.
+- Hardened launcher lifecycle:
+  - Added uvicorn server handle tracking and graceful `should_exit` signaling on unmount.
+  - `_handle_agent_loop_turn()` now surfaces failed bridge injection via TUI notification.
+  - `_build_agent_loop()` now accepts a `message_observer` parameter; launcher bootstrap uses bridge observer at loop construction.
+- Updated `scripts/test_live_attach.sh` to smoke the launcher entry point (`uv run vibecheck-vibe --help`) in addition to integration and backend startup checks.
+- Added/expanded tests for fixes:
+  - `test_bridge.py`: raw event listener path + local callback resolution path.
+  - `test_tui_bridge.py`: raw event forwarding.
+  - `test_launcher.py`: message observer forwarding and callback rebind/interceptor behavior.
+- Verification run after fixes:
+  - `uv run pytest vibecheck/tests/ -v` -> 59 passed.
+  - `scripts/test_live_attach.sh` -> passed.
