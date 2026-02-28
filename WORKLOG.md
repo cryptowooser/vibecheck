@@ -52,3 +52,6 @@
   - Backend smoke: `uv run python -m vibecheck` + `curl` checks (`/api/health` 200, `/api/state` with PSK 200, without PSK 401).
   - Frontend: `cd vibecheck/frontend && npm install && npm run build` succeeded; output in `vibecheck/static/`.
   - Frontend dev probe: `npm run dev` served on `:5173` and responded to `curl`.
+
+### Frontend prototype planning
+- Added `docs/FRONTEND-PROTOTYPE-IMPLEMENTATION.md` with milestone-based punchlist for the ElevenLabs STT/TTS voice loop prototype
