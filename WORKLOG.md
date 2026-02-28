@@ -377,3 +377,17 @@
 - Verification:
   - `bash -n scripts/manual-test/run.sh` -> passed
   - `scripts/manual-test/run.sh --help` -> passed
+
+### WU-34 completion: packaged Phase 3.1 manual validation results
+- Packaged the passing run from `artifacts/manual-test/wu34-20260228-080025/results.tsv` into:
+  - local artifact report: `artifacts/manual-test/wu34-20260228-080025/report.md`
+  - reviewer handoff doc: `docs/reports/WU34-2026-02-28.md`
+- Recorded evidence pointers:
+  - scenario checklist results (`results.tsv`)
+  - TUI transcript capture (`artifacts/manual-test/wu34-20260228-080013/tui-transcript.log`)
+  - capture metadata (`artifacts/manual-test/wu34-20260228-080013/meta.txt`)
+- Validation summary:
+  - S1-S7 all passed
+  - Gap 2 remained a documented known limitation (`terminal_user_bubble=no_known_limitation`)
+- Artifact policy:
+  - Screenshots/recordings intentionally omitted for this run; transcript + checklist evidence used.
