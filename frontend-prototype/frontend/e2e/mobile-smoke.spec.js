@@ -437,6 +437,7 @@ test('mobile browser uses local proxy routes only and does not send provider aut
   const upstreamDirectCalls = []
   let sttHeaders = {}
   let ttsHeaders = {}
+  let visionHeaders = {}
 
   page.on('request', (request) => {
     const url = request.url()
@@ -461,6 +462,18 @@ test('mobile browser uses local proxy routes only and does not send provider aut
       body: 'ID3',
     })
   })
+  await page.route('**/api/vision', async (route) => {
+    visionHeaders = route.request().headers()
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        text: 'proxy header vision response',
+        prompt: 'Describe this image',
+        model: 'mistral-large-latest',
+      }),
+    })
+  })
 
   await page.goto('/')
   await page.getByRole('button', { name: 'Record', exact: true }).click()
@@ -468,9 +481,20 @@ test('mobile browser uses local proxy routes only and does not send provider aut
 
   await expect(page.getByText('proxy header transcript')).toBeVisible()
   await expect(page.getByTestId('status-message')).toHaveText('Playback complete')
+
+  await page.getByTestId('upload-photo-input').setInputFiles({
+    name: 'proxy-header.png',
+    mimeType: 'image/png',
+    buffer: Buffer.from([137, 80, 78, 71]),
+  })
+  await page.getByRole('button', { name: 'Describe', exact: true }).click()
+  await expect(page.getByText('proxy header vision response')).toBeVisible()
+
   expect(upstreamDirectCalls).toEqual([])
   expect(sttHeaders.authorization).toBeUndefined()
   expect(sttHeaders['xi-api-key']).toBeUndefined()
   expect(ttsHeaders.authorization).toBeUndefined()
   expect(ttsHeaders['xi-api-key']).toBeUndefined()
+  expect(visionHeaders.authorization).toBeUndefined()
+  expect(visionHeaders['xi-api-key']).toBeUndefined()
 })

@@ -2,6 +2,22 @@
 
 ## 2026-02-28
 
+### Milestone 4 - hardening coverage expansion (automated)
+- Expanded stale-response guard regression coverage in `frontend-prototype/frontend/src/App.test.js`:
+  - added stale-success path test to ensure outdated `200` responses do not overwrite a newer image selection
+  - added stale-non-2xx detail path test to ensure outdated error-detail parsing does not overwrite newer state
+- Extended proxy/security assertions to explicitly include vision flow:
+  - unit-level proxy/header test now performs a visual describe request and asserts `/api/vision` is proxy-only with no provider auth headers
+  - e2e proxy/header test in `frontend-prototype/frontend/e2e/mobile-smoke.spec.js` now includes a visual describe step and verifies no provider direct calls plus no auth-key headers on vision requests
+- Verification run:
+  - `cd frontend-prototype/frontend && npm test -- src/App.test.js -t "ignores stale success response from an outdated describe request|ignores stale non-2xx detail parsing from an outdated describe request|sends browser requests only to proxy endpoints without provider API auth headers"` -> passed (`3` tests)
+  - `cd frontend-prototype/frontend && npm run test:e2e -- --grep "mobile browser uses local proxy routes only and does not send provider auth headers"` -> passed (`2` tests)
+  - `cd frontend-prototype/frontend && npm test` -> passed (`45` tests)
+  - `cd frontend-prototype/frontend && npm run test:e2e` -> passed (`22` tests)
+  - `cd frontend-prototype/frontend && npm run test:secrets` -> passed
+  - `cd frontend-prototype/frontend && npm run build` -> passed
+- Manual Android/desktop device QA evidence for Milestone 4 remains pending user-run by request.
+
 ### Milestone 3 - reviewer remediation follow-up
 - Addressed stale-response and failure-branch gaps in `frontend-prototype/frontend/src/App.svelte`:
   - added stale guard check in the invalid-JSON response branch before calling `setVisionError(...)`

@@ -2,6 +2,20 @@
 
 ## 2026-02-28
 
+### Frontend prototype visual Milestone 4 hardening (automated coverage)
+- Added stale-response test coverage in `frontend-prototype/frontend/src/App.test.js` for:
+  - delayed successful vision response after reselection (must be ignored as stale)
+  - delayed non-2xx vision-detail parsing after reselection (must be ignored as stale)
+- Expanded proxy/no-provider-auth assertions to cover vision in both test layers:
+  - unit test `sends browser requests only to proxy endpoints without provider API auth headers` now includes `/api/vision`
+  - e2e test `mobile browser uses local proxy routes only and does not send provider auth headers` now triggers visual describe and validates vision request headers/no direct provider calls
+- Verification:
+  - `cd frontend-prototype/frontend && npm test` -> passed (`45` tests)
+  - `cd frontend-prototype/frontend && npm run test:e2e` -> passed (`22` tests)
+  - `cd frontend-prototype/frontend && npm run test:secrets` -> passed
+  - `cd frontend-prototype/frontend && npm run build` -> passed
+- Manual Android/desktop device QA left pending per user instruction (user will run real-device checks).
+
 ### Frontend prototype visual Milestone 3 reviewer-remediation pass
 - Fixed stale-response correctness gap in `frontend-prototype/frontend/src/App.svelte`:
   - invalid-JSON parse failure branch now re-checks `requestId !== visionSequenceCounter` before setting error UI
