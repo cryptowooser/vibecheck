@@ -71,7 +71,8 @@
   let takePhotoInputElement = null
   let uploadPhotoInputElement = null
   let visionDescribeTimer = null
-  let visionRequestCounter = 0
+  // Tracks visual-flow sequence changes (selection and describe) for stale-result guards.
+  let visionSequenceCounter = 0
 
   const isRecording = () => uiState === STATE_RECORDING
   const isBusy = () => uiState === STATE_TRANSCRIBING || uiState === STATE_SPEAKING
@@ -292,7 +293,7 @@
   function setVisionError(message) {
     visionState = VISION_STATE_ERROR
     visionErrorMessage = `${message} Choose Take Photo or Upload Photo and try again.`
-    visionStatusMessage = message
+    visionStatusMessage = 'Describe image failed'
     visionDescription = ''
   }
 
@@ -320,7 +321,7 @@
     }
 
     const hadSelectedImage = Boolean(selectedImageFile)
-    visionRequestCounter += 1
+    visionSequenceCounter += 1
     clearVisionDescribeTimer()
     visionErrorMessage = ''
     visionDescription = ''
@@ -363,14 +364,14 @@
       return
     }
 
-    const requestId = ++visionRequestCounter
+    const requestId = ++visionSequenceCounter
     visionErrorMessage = ''
     visionDescription = ''
     visionState = VISION_STATE_DESCRIBING
     visionStatusMessage = 'Describe image in progress...'
     await waitForDescribePreviewDelay()
 
-    if (requestId !== visionRequestCounter) {
+    if (requestId !== visionSequenceCounter) {
       return
     }
 
@@ -721,7 +722,9 @@
     </button>
 
     <p class={`state-pill vision-state-pill vision-state-${visionState}`} data-testid="vision-state-pill">{visionState}</p>
-    <p class="status" aria-live="polite" data-testid="vision-status-message">{visionStatusMessage}</p>
+    <p class="status" aria-live={visionState === VISION_STATE_ERROR ? 'off' : 'polite'} data-testid="vision-status-message">
+      {visionStatusMessage}
+    </p>
 
     {#if visionErrorMessage}
       <p class="vision-error" data-testid="vision-error-message" role="alert">{visionErrorMessage}</p>

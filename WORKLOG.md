@@ -436,3 +436,16 @@
   - `cd frontend-prototype/frontend && npm run test:e2e` -> passed
   - `cd frontend-prototype/frontend && npm run test:secrets` -> passed
   - `cd frontend-prototype/frontend && npm run build` -> passed
+
+### Frontend prototype visual Milestone 2 follow-up (a11y + naming clarity)
+- In `frontend-prototype/frontend/src/App.svelte`, refined visual error announcements:
+  - status message remains visible but switches to `aria-live="off"` while in visual error state
+  - `role="alert"` visual error text is the primary spoken channel for detailed error content
+- Renamed `visionRequestCounter` to `visionSequenceCounter` and documented intent inline to reflect dual semantics (selection + describe sequence stale-guarding).
+- Added unit assertions in `frontend-prototype/frontend/src/App.test.js` to lock error-status behavior (`Describe image failed` + `aria-live="off"`).
+- Verification:
+  - `cd frontend-prototype/frontend && npm test -- src/App.test.js -t "App visual milestone 2 UI extension"` -> passed
+  - `cd frontend-prototype/frontend && npm test` -> passed
+  - `cd frontend-prototype/frontend && npm run test:e2e -- --grep "mobile visual flow|mobile UI renders and state preview transitions work"` -> passed
+  - `cd frontend-prototype/frontend && npm run test:secrets` -> passed
+  - `cd frontend-prototype/frontend && npm run build` -> passed

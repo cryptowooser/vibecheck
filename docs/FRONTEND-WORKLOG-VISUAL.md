@@ -54,6 +54,22 @@
   - `cd frontend-prototype/frontend && npm run test:secrets` -> passed
   - `cd frontend-prototype/frontend && npm run build` -> passed
 
+### Milestone 2 - accessibility and clarity follow-up
+- Resolved duplicate live-announcement risk in `frontend-prototype/frontend/src/App.svelte`:
+  - visual status region now uses `aria-live="off"` during visual error state
+  - `role="alert"` error message remains the single detailed announcement channel
+  - error status label normalized to `Describe image failed`
+- Renamed stale-guard counter from `visionRequestCounter` to `visionSequenceCounter` with an inline comment clarifying it spans both selection and describe sequence changes.
+- Added assertion coverage in `frontend-prototype/frontend/src/App.test.js` to verify error-state status behavior:
+  - status message text in error state
+  - `aria-live` switches to `off` in error state
+- Verification run:
+  - `cd frontend-prototype/frontend && npm test -- src/App.test.js -t "App visual milestone 2 UI extension"` -> passed
+  - `cd frontend-prototype/frontend && npm test` -> passed (`36` tests)
+  - `cd frontend-prototype/frontend && npm run test:e2e -- --grep "mobile visual flow|mobile UI renders and state preview transitions work"` -> passed (`8` tests)
+  - `cd frontend-prototype/frontend && npm run test:secrets` -> passed
+  - `cd frontend-prototype/frontend && npm run build` -> passed
+
 ### Milestone 1 - review hardening pass
 - Addressed reviewer findings in `frontend-prototype/server/server/app.py`:
   - normalized `/api/vision` upstream error mapping to stable client-safe messages (no raw provider payload passthrough)

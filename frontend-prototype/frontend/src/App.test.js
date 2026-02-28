@@ -1164,6 +1164,8 @@ describe('App visual milestone 2 UI extension', () => {
     expect(screen.getByTestId('vision-error-message')).toHaveTextContent(
       'Choose Take Photo or Upload Photo and try again.',
     )
+    expect(screen.getByTestId('vision-status-message')).toHaveTextContent('Describe image failed')
+    expect(screen.getByTestId('vision-status-message')).toHaveAttribute('aria-live', 'off')
     expect(screen.getByRole('button', { name: 'Describe' })).toBeDisabled()
   })
 
