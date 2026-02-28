@@ -356,6 +356,24 @@ def test_vision_invalid_max_upload_env_returns_500_detail(
     assert 'VISION_MAX_UPLOAD_BYTES' in payload['detail']
 
 
+def test_vision_non_positive_max_upload_env_returns_500_detail(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv('MISTRAL_API_KEY', 'test-key')
+    monkeypatch.setenv('VISION_MAX_UPLOAD_BYTES', '0')
+
+    response = client.post(
+        '/api/vision',
+        files={'image': ('photo.jpg', b'abc', 'image/jpeg')},
+    )
+
+    assert response.status_code == 500
+    assert response.headers['content-type'].startswith('application/json')
+    payload = response.json()
+    assert payload == {'detail': 'VISION_MAX_UPLOAD_BYTES must be greater than 0'}
+
+
 def test_vision_missing_api_key_returns_500(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv('MISTRAL_API_KEY', raising=False)
 

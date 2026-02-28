@@ -19,6 +19,7 @@
 - Verification run:
   - `cd frontend-prototype/server && uv run pytest tests/test_api.py -q` -> `42 passed`
   - `cd frontend-prototype/server && uv run pytest tests/ -v` -> `42 passed`
+- Follow-up: added dedicated test for the non-positive env guard branch (`VISION_MAX_UPLOAD_BYTES=0`) to ensure explicit JSON `500` detail is locked by automation.
 
 ### Milestone 1 - backend `/api/vision` implementation
 - Added `POST /api/vision` in `frontend-prototype/server/server/app.py` using optional `image: UploadFile | None = File(None)` and explicit `400` for missing image.
