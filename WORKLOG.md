@@ -279,3 +279,23 @@
   - `uv run pytest vibecheck/tests/test_bridge.py vibecheck/tests/test_launcher.py vibecheck/tests/test_tui_bridge.py vibecheck/tests/test_live_attach.py -v` -> passed (27 tests)
   - `uv run pytest vibecheck/tests/ -q` -> passed (62 tests)
   - `scripts/test_live_attach.sh` -> passed
+
+### WU-34 manual validation harness (operator error reduction)
+- Added a structured manual-test toolkit under `scripts/manual-test/`:
+  - `run.sh` — interactive scenario runner for Phase 3.1/WU-34 with hard acceptance checks and per-scenario pass/fail capture.
+  - `api.sh` — session API helper (state inspection, wait-for-pending, resolve approval/input, send message).
+  - `tui_prompts.sh` — canonical TUI prompts for each manual scenario (approve/reject/question/race/reconnect/running).
+  - `capture.sh` — starts `vibecheck-vibe` with `script` transcript capture into timestamped artifacts.
+  - `README.md` — runbook for multi-terminal execution (Terminal A/B + phone).
+- Added ignore rules to keep manual artifacts/secrets out of git:
+  - `artifacts/manual-test/`
+  - `scripts/manual-test/.env.local`
+- Harness output:
+  - `artifacts/manual-test/wu34-<timestamp>/results.tsv`
+  - `artifacts/manual-test/wu34-<timestamp>/report.md` (commit hash, Vibe version, scenario table, pasteback summary)
+- Script verification:
+  - `bash -n scripts/manual-test/api.sh scripts/manual-test/run.sh scripts/manual-test/capture.sh scripts/manual-test/tui_prompts.sh`
+  - `scripts/manual-test/run.sh --help`
+  - `scripts/manual-test/api.sh --help`
+  - `scripts/manual-test/tui_prompts.sh list`
+  - `scripts/manual-test/capture.sh --help`
