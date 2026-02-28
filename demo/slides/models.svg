@@ -9,34 +9,34 @@
   <rect width="900" height="450" fill="#0d0d0d"/>
 
   <text x="450" y="50" font-family="Hack, monospace" font-size="28" fill="url(#flame)"
-        text-anchor="middle" font-weight="bold">5 Mistral Models</text>
+        text-anchor="middle" font-weight="bold">4 Mistral Models + ElevenLabs</text>
 
   <!-- Model rows -->
   <g font-family="Hack, monospace" font-size="18">
     <!-- Devstral -->
     <text x="60" y="115" fill="#6644FF" font-weight="bold">Devstral 2</text>
-    <text x="310" y="115" fill="#888">Coding agent</text>
-    <text x="610" y="115" fill="#555">core engine</text>
+    <text x="310" y="115" fill="#888">Coding agent (via Vibe)</text>
+    <text x="660" y="115" fill="#555">core engine</text>
 
     <!-- Voxtral -->
     <text x="60" y="170" fill="#44DD44" font-weight="bold">Voxtral Mini</text>
-    <text x="310" y="170" fill="#888">Voice transcription</text>
-    <text x="610" y="170" fill="#555">$0.003/min</text>
+    <text x="310" y="170" fill="#888">ASR — voice transcription</text>
+    <text x="660" y="170" fill="#555">JA + EN</text>
 
     <!-- Ministral -->
     <text x="60" y="225" fill="#FFB800" font-weight="bold">Ministral 8B</text>
     <text x="310" y="225" fill="#888">Notification copy + urgency</text>
-    <text x="610" y="225" fill="#555">smart alerts</text>
+    <text x="660" y="225" fill="#555">smart alerts</text>
 
-    <!-- Small -->
-    <text x="60" y="280" fill="#FF7000" font-weight="bold">Mistral Small</text>
-    <text x="310" y="280" fill="#888">EN ↔ JA translation</text>
-    <text x="610" y="280" fill="#555">per-message</text>
+    <!-- Large -->
+    <text x="60" y="280" fill="#FF4500" font-weight="bold">Mistral Large 3</text>
+    <text x="310" y="280" fill="#888">EN ↔ JA translation + VLM</text>
+    <text x="660" y="280" fill="#555">multimodal</text>
 
-    <!-- Large (stretch) -->
-    <text x="60" y="335" fill="#FF4500" font-weight="bold">Mistral Large 3</text>
-    <text x="310" y="335" fill="#888">Camera / image analysis</text>
-    <text x="610" y="335" fill="#444" font-style="italic">stretch goal</text>
+    <!-- ElevenLabs -->
+    <text x="60" y="335" fill="#00AAFF" font-weight="bold">ElevenLabs</text>
+    <text x="310" y="335" fill="#888">TTS — text-to-speech</text>
+    <text x="660" y="335" fill="#555">JA + EN</text>
   </g>
 
   <!-- divider lines -->
@@ -48,5 +48,5 @@
 
   <!-- footer -->
   <text x="450" y="420" font-family="Hack, monospace" font-size="14" fill="#444"
-        text-anchor="middle">All models via Mistral API · no self-hosting required</text>
+        text-anchor="middle">Mistral API + ElevenLabs API · full voice loop: Voxtral STT → ElevenLabs TTS</text>
 </svg>

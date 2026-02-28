@@ -58,6 +58,9 @@
     <marker id="arrowgreen" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
       <polygon points="0 0, 10 3.5, 0 7" fill="#44DD44"/>
     </marker>
+    <marker id="arrowblue" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#00AAFF"/>
+    </marker>
   </defs>
 
   <!-- EC2 BOX -->
@@ -90,7 +93,7 @@
   <text x="620" y="206" font-family="monospace" font-size="9" fill="#666"
         text-anchor="middle">approval/input callbacks</text>
   <text x="620" y="222" font-family="monospace" font-size="9" fill="#666"
-        text-anchor="middle">Voxtral · Ministral · Small</text>
+        text-anchor="middle">Voxtral · Ministral · Large</text>
   <text x="620" y="245" font-family="monospace" font-size="9" fill="#44DD44"
         text-anchor="middle">pywebpush (VAPID)</text>
 
@@ -123,7 +126,17 @@
   <text x="808" y="65" font-family="monospace" font-size="10" fill="#FF7000"
         text-anchor="middle">Mistral APIs</text>
   <text x="808" y="80" font-family="monospace" font-size="8" fill="#888"
-        text-anchor="middle">Voxtral · Small · 8B</text>
+        text-anchor="middle">Voxtral · Large · 8B</text>
+
+  <!-- ElevenLabs API cloud -->
+  <line x1="710" y1="145" x2="770" y2="120" stroke="#00AAFF" stroke-width="1.5"
+        stroke-dasharray="4,3" marker-end="url(#arrowblue)"/>
+  <rect x="750" y="105" width="115" height="40" rx="20" ry="20"
+        fill="#1a1a1a" stroke="#00AAFF" stroke-width="1.5" stroke-dasharray="4,3"/>
+  <text x="808" y="122" font-family="monospace" font-size="10" fill="#00AAFF"
+        text-anchor="middle">ElevenLabs</text>
+  <text x="808" y="137" font-family="monospace" font-size="8" fill="#888"
+        text-anchor="middle">TTS · JA + EN</text>
 
   <!-- Push notification arrow (phone ← bridge, curved) -->
   <path d="M 530,145 Q 350,60 155,90" fill="none" stroke="#FFB800" stroke-width="1.5"

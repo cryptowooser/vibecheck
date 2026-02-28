@@ -72,7 +72,8 @@ you've walked away.
 
 ![](./slides/architecture.png)
 
-**Devstral** codes · **Voxtral** transcribes · **Ministral** notifies · **Mistral Large** translates
+4 Mistral models + ElevenLabs TTS
+**Devstral** codes · **Voxtral** STT · **Ministral** notifies · **Large** translates · **ElevenLabs** TTS
 
 <!-- end_slide -->
 
@@ -324,12 +325,12 @@ Right: Events stream to the phone in real time. Approval prompt appears. Tap App
 
 (Let the real-time streaming breathe for a few seconds. The responsiveness sells itself.)
 
-#### V3. Voice in Japanese [0:50–1:10] — D, C, A
+#### V3. Voice Loop — Voxtral In, ElevenLabs Out [0:50–1:10] — D, C, A
 
 Left: Vibe terminal continues.
-Right: Tap mic on phone. Speak in Japanese: "テストを実行して". Transcription appears. Send. Vibe acts on the left.
+Right: Tap mic on phone. Speak in Japanese: "テストを実行して". Voxtral transcribes → send. Vibe acts on the left. Response comes back → phone speaks it via ElevenLabs TTS.
 
-> *"Push-to-talk. Voxtral transcribes Japanese in real time. Talk to your agent in any language."*
+> *"Full voice loop. Voxtral transcribes your voice in — ElevenLabs speaks the response back. Any language."*
 
 #### V4. Push Notifications — Lock Screen Approval [1:10–1:30] — U, D
 
@@ -343,11 +344,11 @@ Right: Close the PWA (swipe away). Vibe hits an approval. Phone buzzes. Notifica
 Left: Return to ASCII logo + key points (or keep Vibe running).
 Right: Quick feature flashes on phone — session list with multiple agents, tap translate on a message (Japanese appears), intensity slider from Chill to Ralph.
 
-> *"Multi-session. Japanese translation. Four Mistral models — Devstral, Voxtral, Ministral, Mistral Large — each in its natural role. vibecheck. Check your vibes from anywhere."*
+> *"Multi-session. Japanese translation. Four Mistral models plus ElevenLabs TTS — Devstral codes, Voxtral transcribes, Ministral notifies, Mistral Large translates, and ElevenLabs speaks it all back to you in Japanese or English. vibecheck. Check your vibes from anywhere."*
 
 **[END — ~1:50]** (10 seconds buffer)
 
-**Criteria coverage:** U hit in V1, V4. D hit in V2, V3, V4. A hit in V1, V2, V3, V5. C hit in V1, V3, V5. T hit in V2, V5. All five covered, heaviest on the three the organizer emphasizes (U, D, C).
+**Criteria coverage:** U hit in V1, V4. D hit in V2, V3, V4. A hit in V1, V2, V3, V5 (Mistral models + ElevenLabs for voice prize). C hit in V1, V3, V5. T hit in V2, V5. All five covered, heaviest on the three the organizer emphasizes (U, D, C).
 
 **Recording notes:**
 - One take, one screen capture — no editing/cuts needed (though you can re-record)
@@ -388,7 +389,7 @@ Slide: ASCII art vibecheck logo fills the terminal. Clean, bold, sets the tone.
 Slide: Architecture diagram (Phone → HTTPS → EC2 → vibecheck bridge → Vibe AgentLoop).
 Below or next slide: Model list — one line each.
 
-> *"We hook directly into Vibe's AgentLoop — typed events, clean callbacks, in-process. Four Mistral models: Devstral codes, Voxtral transcribes voice, Ministral handles notifications, Mistral Large does translation. Each in its natural role."*
+> *"We hook directly into Vibe's AgentLoop — typed events, clean callbacks, in-process. Four Mistral models plus ElevenLabs: Devstral codes, Voxtral transcribes your voice, Ministral writes smart notifications, Mistral Large translates — and ElevenLabs speaks it all back to you. Full voice loop."*
 
 (Keep this tight — 20 seconds. The demo will show all of this working.)
 
@@ -415,16 +416,17 @@ This is the heart of the presentation. **2 minutes 40 seconds of live product.**
 
 (Let Vibe run for a beat so the audience sees multiple events streaming. The real-time feel is the demo moment — don't rush past it. If a second approval comes up naturally, approve it too.)
 
-##### B6. Voice Input in Japanese [2:00–2:40] — D, C, A
+##### B6. Voice Loop — Voxtral STT + ElevenLabs TTS [2:00–2:40] — D, C, A
 
 1. Tap mic on phone.
 2. **Speak in Japanese:** "テストを実行して" (run the tests).
 3. Voxtral transcribes → text appears → send.
 4. Vibe receives the instruction and acts.
+5. Agent response comes back → **phone reads it aloud via ElevenLabs TTS** (Japanese).
 
-> *"Push-to-talk. Voxtral transcribes in real time — Japanese, English, whatever you speak."*
+> *"Full voice loop. Voxtral transcribes your voice in — ElevenLabs speaks the response back out. Japanese, English, whatever you need."*
 
-(If this lands well and time allows, do a second voice command.)
+(The voice loop is the ElevenLabs prize moment. Make sure audio is audible to the room.)
 
 ##### B7. Push Notifications [2:40–3:15] — U, D
 

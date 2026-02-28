@@ -72,7 +72,7 @@ Architecture
 
 <!-- end_slide -->
 
-5 Mistral Models
+4 Mistral Models + ElevenLabs
 ===
 
 <!-- jump_to_middle -->
@@ -88,7 +88,7 @@ What It Does
 <!-- incremental_lists: true -->
 
 - **Approve tool calls** from your phone (or lock screen)
-- **Voice input** — speak Japanese, Voxtral transcribes
+- **Voice loop** — Voxtral STT in, ElevenLabs TTS out (JA + EN)
 - **Push notifications** — phone buzzes when agent needs you
 - **Translation** — EN↔JA toggle on any message
 - **Smart alerts** — Ministral writes notification copy + urgency
