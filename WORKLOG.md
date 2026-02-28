@@ -153,3 +153,15 @@
   - `cd frontend-prototype/frontend && npm test` -> 7 passed.
   - `cd frontend-prototype/frontend && npm run build` -> succeeded.
   - `cd frontend-prototype/frontend && npm run test:e2e` -> 2 passed.
+
+### Frontend prototype milestone 3 kickoff (STT integration verification)
+- Read `docs/PLAN.md`, `docs/IMPLEMENTATION.md`, `docs/FRONTEND-PROTOTYPE-PLAN.md`, and `docs/FRONTEND-PROTOTYPE-IMPLEMENTATION.md` to align milestone scope before changes.
+- Added Milestone 3-focused frontend tests in `frontend-prototype/frontend/src/App.test.js`:
+  - record -> stop -> `/api/stt` upload -> transcript render
+  - microphone permission denied path with actionable UI error
+  - short recording validation path (no STT call)
+  - STT failure retry path (`Retry STT` re-attempts transcription)
+- Result: all new tests passed with current `App.svelte` implementation, confirming Milestone 3 behavior was already present and stable.
+- Verification:
+  - `cd frontend-prototype/frontend && npm test` -> 11 passed.
+  - `cd frontend-prototype/frontend && npm run build` -> succeeded.

@@ -9,6 +9,56 @@ function jsonResponse(payload, status = 200) {
   })
 }
 
+function installMediaDevices(getUserMedia) {
+  const originalMediaDevices = Object.getOwnPropertyDescriptor(navigator, 'mediaDevices')
+  Object.defineProperty(navigator, 'mediaDevices', {
+    configurable: true,
+    value: { getUserMedia },
+  })
+
+  return () => {
+    if (originalMediaDevices) {
+      Object.defineProperty(navigator, 'mediaDevices', originalMediaDevices)
+      return
+    }
+    Reflect.deleteProperty(navigator, 'mediaDevices')
+  }
+}
+
+function installRecorderMock({ chunkBytes = 4096 } = {}) {
+  class MockMediaRecorder {
+    static isTypeSupported() {
+      return true
+    }
+
+    constructor() {
+      this.state = 'inactive'
+      this.mimeType = 'audio/webm'
+      this.ondataavailable = null
+      this.onerror = null
+      this.onstop = null
+    }
+
+    start() {
+      this.state = 'recording'
+    }
+
+    stop() {
+      this.state = 'inactive'
+      if (chunkBytes > 0 && this.ondataavailable) {
+        const data = new Blob([new Uint8Array(chunkBytes)], { type: this.mimeType })
+        this.ondataavailable({ data })
+      }
+      if (this.onstop) {
+        this.onstop()
+      }
+    }
+  }
+
+  vi.stubGlobal('MediaRecorder', MockMediaRecorder)
+  window.MediaRecorder = MockMediaRecorder
+}
+
 describe('App milestone 2 state preview', () => {
   let fetchMock
 
@@ -353,6 +403,126 @@ describe('App milestone 2 state preview', () => {
       } else {
         Reflect.deleteProperty(navigator, 'mediaDevices')
       }
+    }
+  })
+})
+
+describe('App milestone 3 STT integration', () => {
+  let fetchMock
+
+  beforeEach(() => {
+    fetchMock = vi.fn(async (resource) => {
+      if (resource === '/api/voices') {
+        return jsonResponse({
+          voices: [{ voice_id: 'voice-one', name: 'Voice One' }],
+        })
+      }
+      if (resource === '/api/stt') {
+        return jsonResponse({ text: 'transcribed text', language: 'en' })
+      }
+      return jsonResponse({ detail: 'Not found' }, 404)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    vi.restoreAllMocks()
+  })
+
+  it('records, uploads to /api/stt, and renders transcript text', async () => {
+    const restoreMediaDevices = installMediaDevices(vi.fn().mockResolvedValue({ getTracks: () => [] }))
+    installRecorderMock({ chunkBytes: 4096 })
+
+    const nowValues = [1000, 1800, 2000]
+    vi.spyOn(Date, 'now').mockImplementation(() => nowValues.shift() ?? 2200)
+
+    try {
+      render(App)
+
+      await fireEvent.click(screen.getByRole('button', { name: 'Record' }))
+      await fireEvent.click(screen.getByRole('button', { name: 'Stop' }))
+
+      expect(await screen.findByText('transcribed text')).toBeInTheDocument()
+      expect(fetchMock).toHaveBeenCalledWith('/api/stt', expect.objectContaining({ method: 'POST' }))
+    } finally {
+      restoreMediaDevices()
+    }
+  })
+
+  it('shows actionable error when microphone permission is denied', async () => {
+    const restoreMediaDevices = installMediaDevices(vi.fn().mockRejectedValue(new Error('denied')))
+    installRecorderMock()
+
+    try {
+      render(App)
+
+      await fireEvent.click(screen.getByRole('button', { name: 'Record' }))
+
+      expect(await screen.findByRole('heading', { name: 'Error' })).toBeInTheDocument()
+      expect(screen.getByText(/microphone permission denied/i)).toBeInTheDocument()
+      expect(fetchMock).not.toHaveBeenCalledWith('/api/stt', expect.anything())
+    } finally {
+      restoreMediaDevices()
+    }
+  })
+
+  it('rejects very short recordings and does not call /api/stt', async () => {
+    const restoreMediaDevices = installMediaDevices(vi.fn().mockResolvedValue({ getTracks: () => [] }))
+    installRecorderMock({ chunkBytes: 4096 })
+
+    const nowValues = [1000, 1150]
+    vi.spyOn(Date, 'now').mockImplementation(() => nowValues.shift() ?? 1200)
+
+    try {
+      render(App)
+
+      await fireEvent.click(screen.getByRole('button', { name: 'Record' }))
+      await fireEvent.click(screen.getByRole('button', { name: 'Stop' }))
+
+      expect(await screen.findByText(/recording is too short/i)).toBeInTheDocument()
+      expect(fetchMock).not.toHaveBeenCalledWith('/api/stt', expect.anything())
+    } finally {
+      restoreMediaDevices()
+    }
+  })
+
+  it('offers Retry STT and re-attempts transcription after a failed STT request', async () => {
+    let sttAttempts = 0
+    fetchMock = vi.fn(async (resource) => {
+      if (resource === '/api/voices') {
+        return jsonResponse({
+          voices: [{ voice_id: 'voice-one', name: 'Voice One' }],
+        })
+      }
+      if (resource === '/api/stt') {
+        sttAttempts += 1
+        return jsonResponse({ detail: 'upstream unavailable' }, 502)
+      }
+      return jsonResponse({ detail: 'Not found' }, 404)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const restoreMediaDevices = installMediaDevices(vi.fn().mockResolvedValue({ getTracks: () => [] }))
+    installRecorderMock({ chunkBytes: 4096 })
+    const nowValues = [1000, 1800, 2200]
+    vi.spyOn(Date, 'now').mockImplementation(() => nowValues.shift() ?? 2400)
+
+    try {
+      render(App)
+
+      await fireEvent.click(screen.getByRole('button', { name: 'Record' }))
+      await fireEvent.click(screen.getByRole('button', { name: 'Stop' }))
+
+      const retryButton = await screen.findByRole('button', { name: 'Retry STT' })
+      expect(retryButton).toBeInTheDocument()
+      expect(sttAttempts).toBe(1)
+
+      await fireEvent.click(retryButton)
+      await screen.findByRole('heading', { name: 'Error' })
+      expect(sttAttempts).toBe(2)
+    } finally {
+      restoreMediaDevices()
     }
   })
 })
