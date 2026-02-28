@@ -162,6 +162,7 @@ describe('App milestone 2 state preview', () => {
     render(App)
 
     expect(screen.getByRole('heading', { name: 'State Preview' })).toBeInTheDocument()
+    expect(screen.getByText('Recommended for Japanese: Otani (JP).')).toBeInTheDocument()
     expect(screen.getByRole('status')).toHaveTextContent('Ready')
     expect(screen.getByRole('button', { name: 'idle' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'recording' })).toBeInTheDocument()

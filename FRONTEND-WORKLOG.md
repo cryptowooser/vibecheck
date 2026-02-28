@@ -280,3 +280,12 @@
   - `cd frontend-prototype/server && uv run pytest tests -v` -> 20 passed.
   - `cd frontend-prototype/frontend && npm test` -> 27 passed.
   - `cd frontend-prototype/frontend && npm run test:e2e` -> 14 passed.
+
+### Frontend prototype Japanese recommendation copy (UI)
+- Added a simple in-app recommendation line under voice selector:
+  - `Recommended for Japanese: Otani (JP).`
+- Added unit coverage in `frontend-prototype/frontend/src/App.test.js` to assert the recommendation line is rendered.
+- Added lightweight styling in `frontend-prototype/frontend/src/app.css` to match existing muted helper copy.
+- Verification:
+  - `cd frontend-prototype/frontend && npm test` -> 27 passed.
+  - `cd frontend-prototype/frontend && npm run test:e2e` -> 14 passed.

@@ -454,6 +454,7 @@
         <option value={voice.voice_id}>{formatVoiceLabel(voice)}</option>
       {/each}
     </select>
+    <p class="voice-note">Recommended for Japanese: Otani (JP).</p>
 
     {#if isRecording()}
       <button class="action action-stop" onclick={stopRecording}>Stop</button>
