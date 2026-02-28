@@ -174,6 +174,52 @@ wait_for_enter() {
   esac
 }
 
+wait_for_pending_clear() {
+  local kind="$1"
+  local timeout="${2:-180}"
+  local interval=1
+  local elapsed=0
+  local pending_id=""
+  local key=""
+
+  while (( elapsed < timeout )); do
+    if [[ "$kind" == "approval" ]]; then
+      pending_id="$(api call-id 2>/dev/null || true)"
+    else
+      pending_id="$(api request-id 2>/dev/null || true)"
+    fi
+
+    if [[ -z "$pending_id" ]]; then
+      echo "Pending $kind cleared (${elapsed}s)."
+      return 0
+    fi
+
+    if (( elapsed == 0 || elapsed % 5 == 0 )); then
+      echo "Waiting for pending $kind to clear... ${elapsed}s (id=$pending_id)"
+      echo "Press q then Enter to abort wait."
+    fi
+
+    if read -r -t "$interval" key; then
+      case "$key" in
+        q|Q|quit|QUIT|exit|EXIT)
+          echo "Aborted while waiting for pending $kind clear."
+          append_result "RUN_ABORTED" "ABORT" "operator_exit_during_wait"
+          build_report || true
+          echo "Partial report: $REPORT_MD"
+          exit 130
+          ;;
+        *)
+          ;;
+      esac
+    fi
+
+    ((elapsed += interval))
+  done
+
+  echo "Timed out waiting for pending $kind to clear after ${timeout}s."
+  return 1
+}
+
 append_result() {
   local key="$1"
   local status="$2"
@@ -226,7 +272,7 @@ scenario_remote_approve() {
   echo "Detected pending approval: $call_id"
 
   wait_for_enter "Approve this request from phone"
-  if ! api wait-clear-approval 180 >/dev/null 2>&1; then
+  if ! wait_for_pending_clear approval 180; then
     append_result "$key" "FAIL" "Approval did not clear after phone action; ${notes[*]}"
     return
   fi
@@ -261,7 +307,7 @@ scenario_remote_reject() {
   echo "Detected pending approval: $call_id"
 
   wait_for_enter "Reject this request from phone"
-  if ! api wait-clear-approval 180 >/dev/null 2>&1; then
+  if ! wait_for_pending_clear approval 180; then
     append_result "$key" "FAIL" "Approval did not clear after phone reject; ${notes[*]}"
     return
   fi
@@ -295,7 +341,7 @@ scenario_remote_question_answer() {
   echo "Detected pending input: $request_id"
 
   wait_for_enter "Answer this question from phone"
-  if ! api wait-clear-input 180 >/dev/null 2>&1; then
+  if ! wait_for_pending_clear input 180; then
     append_result "$key" "FAIL" "Pending input did not clear after phone answer; ${notes[*]}"
     return
   fi
@@ -330,7 +376,7 @@ scenario_first_wins_race() {
   echo "Detected pending approval: $call_id"
 
   wait_for_enter "Resolve simultaneously on keyboard + phone now"
-  if ! api wait-clear-approval 180 >/dev/null 2>&1; then
+  if ! wait_for_pending_clear approval 180; then
     append_result "$key" "FAIL" "Approval did not clear after race action; ${notes[*]}"
     return
   fi
@@ -374,7 +420,7 @@ scenario_reconnect_pending() {
   fi
 
   wait_for_enter "Resolve approval from phone now"
-  if ! api wait-clear-approval 180 >/dev/null 2>&1; then
+  if ! wait_for_pending_clear approval 180; then
     append_result "$key" "FAIL" "Approval did not clear after reconnect resolve; ${notes[*]}"
     return
   fi

@@ -359,3 +359,12 @@
   - `uv run pytest vibecheck/tests/test_bridge.py::test_settle_local_state_schedules_follow_up_ui_reset -q` -> passed
   - `uv run pytest vibecheck/tests/test_launcher.py::test_handle_agent_loop_turn_renders_prompt_before_bridge_injection -q` -> passed
   - `uv run pytest vibecheck/tests/ -v` -> 65 passed
+
+### WU-34 manual runner UX: explicit pending-clear progress and abort
+- Updated `scripts/manual-test/run.sh` to replace silent `api wait-clear-*` blocking waits with `wait_for_pending_clear()`:
+  - prints progress every 5s with pending id and elapsed time
+  - supports `q` + Enter abort while waiting and writes a partial report
+  - now used in approve/reject/question/race/reconnect scenarios
+- Verification:
+  - `bash -n scripts/manual-test/run.sh` -> passed
+  - `scripts/manual-test/run.sh --help` -> passed
