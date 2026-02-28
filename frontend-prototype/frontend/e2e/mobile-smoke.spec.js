@@ -132,6 +132,22 @@ test('mobile UI falls back to built-in voices when /api/voices fails', async ({ 
 
 test('mobile visual flow supports upload, describe lifecycle, and in-flight button disablement', async ({ page }) => {
   await stubVoices(page)
+  let visionRequestContentType = ''
+  await page.route('**/api/vision', async (route) => {
+    visionRequestContentType = route.request().headers()['content-type'] ?? ''
+    await new Promise((resolve) => {
+      setTimeout(resolve, 120)
+    })
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        text: 'A compact desk setup with a laptop and coffee mug.',
+        prompt: 'Describe this image',
+        model: 'mistral-large-latest',
+      }),
+    })
+  })
   await page.goto('/')
 
   await page.getByTestId('upload-photo-input').setInputFiles({
@@ -151,7 +167,53 @@ test('mobile visual flow supports upload, describe lifecycle, and in-flight butt
 
   await expect(page.getByTestId('vision-state-pill')).toHaveText('described')
   await expect(page.getByTestId('vision-status-message')).toHaveText('Description ready')
-  await expect(page.getByText('Vision describe preview is ready. API wiring lands in Milestone 3.')).toBeVisible()
+  await expect(page.getByText('A compact desk setup with a laptop and coffee mug.')).toBeVisible()
+  expect(visionRequestContentType).toContain('multipart/form-data')
+})
+
+test('mobile visual flow retries after a transient vision API failure', async ({ page }) => {
+  await stubVoices(page)
+  let visionAttempt = 0
+  await page.route('**/api/vision', async (route) => {
+    visionAttempt += 1
+    if (visionAttempt === 1) {
+      await route.fulfill({
+        status: 502,
+        contentType: 'application/json',
+        body: JSON.stringify({ detail: 'Vision upstream unavailable' }),
+      })
+      return
+    }
+
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        text: 'A person holding a phone near a window.',
+        prompt: 'Describe this image',
+        model: 'mistral-large-latest',
+      }),
+    })
+  })
+  await page.goto('/')
+
+  const uploadInput = page.getByTestId('upload-photo-input')
+  await uploadInput.setInputFiles({
+    name: 'retry.png',
+    mimeType: 'image/png',
+    buffer: Buffer.from([137, 80, 78, 71]),
+  })
+
+  await page.getByRole('button', { name: 'Describe', exact: true }).click()
+  await expect(page.getByTestId('vision-state-pill')).toHaveText('error')
+  await expect(page.getByTestId('vision-error-message')).toContainText('Vision upstream unavailable')
+  await expect(page.getByTestId('vision-error-message')).toContainText('Tap Describe to retry.')
+  await expect(page.getByText('retry.png')).toBeVisible()
+
+  await page.getByRole('button', { name: 'Describe', exact: true }).click()
+  await expect(page.getByTestId('vision-state-pill')).toHaveText('described')
+  await expect(page.getByText('A person holding a phone near a window.')).toBeVisible()
+  expect(visionAttempt).toBe(2)
 })
 
 test('mobile visual flow keeps prior valid image after invalid replacement and clears stale error on cancel', async ({ page }) => {
@@ -199,7 +261,7 @@ test('mobile visual flow resets to idle when canceling after an error with no pr
 
   await uploadInput.setInputFiles([])
   await expect(page.getByTestId('vision-state-pill')).toHaveText('idle')
-  await expect(page.getByTestId('vision-status-message')).toHaveText('No image selected')
+  await expect(page.getByTestId('vision-status-message')).toHaveText('No image selected. Choose Take Photo or Upload Photo.')
   await expect(page.getByTestId('vision-error-message')).toHaveCount(0)
 })
 

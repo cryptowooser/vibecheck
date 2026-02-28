@@ -1088,7 +1088,7 @@ describe('App milestone 4 TTS integration and playback', () => {
   })
 })
 
-describe('App visual milestone 2 UI extension', () => {
+describe('App visual milestone 3 end-to-end flow', () => {
   let fetchMock
 
   beforeEach(() => {
@@ -1096,6 +1096,13 @@ describe('App visual milestone 2 UI extension', () => {
       if (resource === '/api/voices') {
         return jsonResponse({
           voices: [{ voice_id: 'voice-one', name: 'Voice One' }],
+        })
+      }
+      if (resource === '/api/vision') {
+        return jsonResponse({
+          text: 'A compact desk setup with a laptop and coffee mug.',
+          prompt: 'Describe this image',
+          model: 'mistral-large-latest',
         })
       }
       return jsonResponse({ detail: 'Not found' }, 404)
@@ -1189,7 +1196,18 @@ describe('App visual milestone 2 UI extension', () => {
   })
 
   it('transitions visual status across image_selected, describing, and described', async () => {
-    vi.useFakeTimers()
+    const visionDeferred = createDeferred()
+    fetchMock.mockImplementation(async (resource) => {
+      if (resource === '/api/voices') {
+        return jsonResponse({
+          voices: [{ voice_id: 'voice-one', name: 'Voice One' }],
+        })
+      }
+      if (resource === '/api/vision') {
+        return visionDeferred.promise
+      }
+      return jsonResponse({ detail: 'Not found' }, 404)
+    })
     render(App)
 
     const uploadInput = screen.getByTestId('upload-photo-input')
@@ -1204,10 +1222,46 @@ describe('App visual milestone 2 UI extension', () => {
     expect(screen.getByTestId('vision-state-pill')).toHaveTextContent('describing')
     expect(screen.getByTestId('vision-status-message')).toHaveTextContent('Describe image in progress')
 
-    await vi.advanceTimersByTimeAsync(450)
+    visionDeferred.resolve(
+      jsonResponse({
+        text: 'A city skyline reflected in water at dusk.',
+        prompt: 'Describe this image',
+        model: 'mistral-large-latest',
+      }),
+    )
+    expect(await screen.findByText('A city skyline reflected in water at dusk.')).toBeInTheDocument()
     expect(screen.getByTestId('vision-state-pill')).toHaveTextContent('described')
     expect(screen.getByTestId('vision-status-message')).toHaveTextContent('Description ready')
-    expect(screen.getByText('Vision describe preview is ready. API wiring lands in Milestone 3.')).toBeInTheDocument()
+  })
+
+  it('posts multipart form data to /api/vision and renders the returned text', async () => {
+    render(App)
+
+    const uploadInput = screen.getByTestId('upload-photo-input')
+    const validFile = new File([new Uint8Array([255, 216, 255, 224])], 'camera.jpg', { type: 'image/jpeg' })
+
+    await fireEvent.change(uploadInput, {
+      target: { files: [validFile] },
+    })
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Describe' }))
+
+    expect(await screen.findByText('A compact desk setup with a laptop and coffee mug.')).toBeInTheDocument()
+    expect(screen.getByTestId('vision-state-pill')).toHaveTextContent('described')
+    expect(screen.getByTestId('vision-status-message')).toHaveTextContent('Description ready')
+
+    const visionCall = fetchMock.mock.calls.find(([resource]) => resource === '/api/vision')
+    expect(visionCall).toBeTruthy()
+    const [, requestOptions] = visionCall
+    expect(requestOptions).toMatchObject({
+      method: 'POST',
+    })
+    expect(requestOptions.body).toBeInstanceOf(FormData)
+    const submittedImage = requestOptions.body.get('image')
+    expect(submittedImage).toBeInstanceOf(File)
+    expect(submittedImage.name).toBe('camera.jpg')
+    expect(submittedImage.type).toBe('image/jpeg')
+    expect(submittedImage.size).toBe(validFile.size)
   })
 
   it('wires Take Photo and Upload Photo button clicks to the hidden input click handlers', async () => {
@@ -1226,7 +1280,18 @@ describe('App visual milestone 2 UI extension', () => {
   })
 
   it('disables picker buttons while visual describe is in progress', async () => {
-    vi.useFakeTimers()
+    const visionDeferred = createDeferred()
+    fetchMock.mockImplementation(async (resource) => {
+      if (resource === '/api/voices') {
+        return jsonResponse({
+          voices: [{ voice_id: 'voice-one', name: 'Voice One' }],
+        })
+      }
+      if (resource === '/api/vision') {
+        return visionDeferred.promise
+      }
+      return jsonResponse({ detail: 'Not found' }, 404)
+    })
     render(App)
 
     const uploadInput = screen.getByTestId('upload-photo-input')
@@ -1240,9 +1305,71 @@ describe('App visual milestone 2 UI extension', () => {
     expect(screen.getByRole('button', { name: 'Take Photo' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Upload Photo' })).toBeDisabled()
 
-    await vi.advanceTimersByTimeAsync(450)
+    visionDeferred.resolve(
+      jsonResponse({
+        text: 'A cyclist riding along a tree-lined street.',
+        prompt: 'Describe this image',
+        model: 'mistral-large-latest',
+      }),
+    )
+    await screen.findByText('A cyclist riding along a tree-lined street.')
     expect(screen.getByRole('button', { name: 'Take Photo' })).toBeEnabled()
     expect(screen.getByRole('button', { name: 'Upload Photo' })).toBeEnabled()
+  })
+
+  it('shows vision API error, keeps image selected, and retries with the same image', async () => {
+    let visionAttempt = 0
+    fetchMock.mockImplementation(async (resource) => {
+      if (resource === '/api/voices') {
+        return jsonResponse({
+          voices: [{ voice_id: 'voice-one', name: 'Voice One' }],
+        })
+      }
+      if (resource === '/api/vision') {
+        visionAttempt += 1
+        if (visionAttempt === 1) {
+          return jsonResponse({ detail: 'Vision upstream unavailable' }, 502)
+        }
+        return jsonResponse({
+          text: 'A person holding a phone near a window.',
+          prompt: 'Describe this image',
+          model: 'mistral-large-latest',
+        })
+      }
+      return jsonResponse({ detail: 'Not found' }, 404)
+    })
+
+    render(App)
+
+    const uploadInput = screen.getByTestId('upload-photo-input')
+    const validFile = new File([new Uint8Array([255, 216, 255, 224])], 'retry.jpg', { type: 'image/jpeg' })
+
+    await fireEvent.change(uploadInput, {
+      target: { files: [validFile] },
+    })
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Describe' }))
+    await waitFor(() => {
+      expect(screen.getByTestId('vision-state-pill')).toHaveTextContent('error')
+    })
+    expect(screen.getByTestId('vision-error-message')).toHaveTextContent('Vision upstream unavailable')
+    expect(screen.getByTestId('vision-error-message')).toHaveTextContent('Tap Describe to retry.')
+    expect(screen.getByText('retry.jpg')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Describe' })).toBeEnabled()
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Describe' }))
+    expect(await screen.findByText('A person holding a phone near a window.')).toBeInTheDocument()
+    expect(screen.getByTestId('vision-state-pill')).toHaveTextContent('described')
+
+    const visionCalls = fetchMock.mock.calls.filter(([resource]) => resource === '/api/vision')
+    expect(visionCalls).toHaveLength(2)
+    const firstImage = visionCalls[0][1].body.get('image')
+    const secondImage = visionCalls[1][1].body.get('image')
+    expect(firstImage).toBeInstanceOf(File)
+    expect(secondImage).toBeInstanceOf(File)
+    expect(secondImage.name).toBe(firstImage.name)
+    expect(secondImage.size).toBe(firstImage.size)
+    expect(secondImage.type).toBe(firstImage.type)
   })
 
   it('keeps prior valid image selected when an invalid replacement is chosen', async () => {
@@ -1274,7 +1401,9 @@ describe('App visual milestone 2 UI extension', () => {
       target: { files: [] },
     })
     expect(screen.getByTestId('vision-state-pill')).toHaveTextContent('idle')
-    expect(screen.getByTestId('vision-status-message')).toHaveTextContent('No image selected')
+    expect(screen.getByTestId('vision-status-message')).toHaveTextContent(
+      'No image selected. Choose Take Photo or Upload Photo.',
+    )
     expect(screen.queryByTestId('vision-error-message')).not.toBeInTheDocument()
 
     const initialInvalidMimeFile = new File(['plain text'], 'bad-first.txt', { type: 'text/plain' })
@@ -1288,7 +1417,9 @@ describe('App visual milestone 2 UI extension', () => {
       target: { files: [] },
     })
     expect(screen.getByTestId('vision-state-pill')).toHaveTextContent('idle')
-    expect(screen.getByTestId('vision-status-message')).toHaveTextContent('No image selected')
+    expect(screen.getByTestId('vision-status-message')).toHaveTextContent(
+      'No image selected. Choose Take Photo or Upload Photo.',
+    )
     expect(screen.queryByTestId('vision-error-message')).not.toBeInTheDocument()
 
     const validFile = new File([new Uint8Array([137, 80, 78, 71])], 'sample.png', { type: 'image/png' })

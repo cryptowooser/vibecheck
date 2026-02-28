@@ -2,6 +2,26 @@
 
 ## 2026-02-28
 
+### Frontend prototype visual Milestone 3
+- Implemented end-to-end image describe wiring in `frontend-prototype/frontend/src/App.svelte`:
+  - `Describe` now posts multipart image data to `POST /api/vision`
+  - success path renders backend `text` output in the visual description panel
+  - transport/non-2xx/invalid-response branches now render explicit visual errors with retry guidance
+  - selected image remains intact across failures so retries reuse the same current selection
+- Improved no-file-selected handling in the visual flow:
+  - cancel/blocked camera or picker with no selection now sets clear status guidance (`No image selected. Choose Take Photo or Upload Photo.`)
+- Removed milestone-2 simulated describe delay/timer logic after migrating to live API-backed describe behavior.
+- Updated frontend test coverage:
+  - `frontend-prototype/frontend/src/App.test.js` now validates multipart submit, response rendering, and error+retry behavior.
+  - `frontend-prototype/frontend/e2e/mobile-smoke.spec.js` now stubs `/api/vision`, verifies rendered response text, and adds transient-failure retry smoke coverage.
+- Installed missing Playwright browsers for local e2e execution:
+  - `cd frontend-prototype/frontend && npx playwright install chromium webkit`
+- Verification:
+  - `cd frontend-prototype/frontend && npm test` -> passed (`38` tests)
+  - `cd frontend-prototype/frontend && npm run test:e2e` -> passed (`22` tests)
+  - `cd frontend-prototype/frontend && npm run test:secrets` -> passed
+  - `cd frontend-prototype/frontend && npm run build` -> passed
+
 ### Repository setup
 - Created `vibecheck` repo
 - Created README.md (full product brief)

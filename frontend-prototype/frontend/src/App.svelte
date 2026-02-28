@@ -38,7 +38,8 @@
   const VISION_STATE_ERROR = 'error'
   const VISION_ALLOWED_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp'])
   const VISION_MAX_UPLOAD_BYTES = 10 * 1024 * 1024
-  const VISION_PREVIEW_DESCRIBE_DELAY_MS = 400
+  const VISION_NO_SELECTION_STATUS = 'No image selected'
+  const VISION_NO_SELECTION_GUIDANCE = 'No image selected. Choose Take Photo or Upload Photo.'
 
   let uiState = STATE_IDLE
   let statusMessage = 'Ready'
@@ -61,7 +62,7 @@
   let requestInFlight = false
   let micPermissionInFlight = false
   let visionState = VISION_STATE_IDLE
-  let visionStatusMessage = 'No image selected'
+  let visionStatusMessage = VISION_NO_SELECTION_STATUS
   let visionDescription = ''
   let visionErrorMessage = ''
   let selectedImageFile = null
@@ -70,7 +71,6 @@
   let selectedImagePreviewRevocable = false
   let takePhotoInputElement = null
   let uploadPhotoInputElement = null
-  let visionDescribeTimer = null
   // Tracks visual-flow sequence changes (selection and describe) for stale-result guards.
   let visionSequenceCounter = 0
 
@@ -86,7 +86,6 @@
       stopTracks()
       stopAudio()
       releaseImagePreview()
-      clearVisionDescribeTimer()
     }
   })
 
@@ -111,14 +110,6 @@
       URL.revokeObjectURL(currentAudioUrl)
       currentAudioUrl = ''
     }
-  }
-
-  function clearVisionDescribeTimer() {
-    if (!visionDescribeTimer) {
-      return
-    }
-    clearTimeout(visionDescribeTimer)
-    visionDescribeTimer = null
   }
 
   function releaseImagePreview() {
@@ -290,11 +281,24 @@
     selectedImagePreviewRevocable = revocable
   }
 
-  function setVisionError(message) {
+  function setVisionError(message, options = {}) {
+    const guidance = options.allowRetry ? 'Tap Describe to retry.' : 'Choose Take Photo or Upload Photo and try again.'
     visionState = VISION_STATE_ERROR
-    visionErrorMessage = `${message} Choose Take Photo or Upload Photo and try again.`
+    visionErrorMessage = `${message} ${guidance}`
     visionStatusMessage = 'Describe image failed'
     visionDescription = ''
+  }
+
+  async function getVisionFailureDetail(response) {
+    try {
+      const payload = await response.json()
+      if (typeof payload?.detail === 'string' && payload.detail.trim()) {
+        return payload.detail.trim()
+      }
+    } catch {
+      // Fall through to status-derived fallback.
+    }
+    return `Vision request failed with status ${response.status}.`
   }
 
   async function handleImageInput(event) {
@@ -308,7 +312,7 @@
       visionErrorMessage = ''
       if (!selectedImageFile) {
         visionState = VISION_STATE_IDLE
-        visionStatusMessage = 'No image selected'
+        visionStatusMessage = VISION_NO_SELECTION_GUIDANCE
         visionDescription = ''
         return
       }
@@ -322,7 +326,6 @@
 
     const hadSelectedImage = Boolean(selectedImageFile)
     visionSequenceCounter += 1
-    clearVisionDescribeTimer()
     visionErrorMessage = ''
     visionDescription = ''
 
@@ -349,16 +352,6 @@
     visionStatusMessage = 'Image selected. Tap Describe.'
   }
 
-  function waitForDescribePreviewDelay() {
-    clearVisionDescribeTimer()
-    return new Promise((resolve) => {
-      visionDescribeTimer = setTimeout(() => {
-        visionDescribeTimer = null
-        resolve()
-      }, VISION_PREVIEW_DESCRIBE_DELAY_MS)
-    })
-  }
-
   async function describeSelectedImage() {
     if (!selectedImageFile || visionState === VISION_STATE_DESCRIBING) {
       return
@@ -369,15 +362,58 @@
     visionDescription = ''
     visionState = VISION_STATE_DESCRIBING
     visionStatusMessage = 'Describe image in progress...'
-    await waitForDescribePreviewDelay()
+
+    const requestBody = new FormData()
+    requestBody.append('image', selectedImageFile)
+
+    let response = null
+    try {
+      response = await fetch('/api/vision', {
+        method: 'POST',
+        body: requestBody,
+      })
+    } catch {
+      if (requestId !== visionSequenceCounter) {
+        return
+      }
+      setVisionError('Could not reach vision service.', { allowRetry: true })
+      return
+    }
 
     if (requestId !== visionSequenceCounter) {
       return
     }
 
+    if (!response.ok) {
+      const detail = await getVisionFailureDetail(response)
+      if (requestId !== visionSequenceCounter) {
+        return
+      }
+      setVisionError(detail, { allowRetry: true })
+      return
+    }
+
+    let payload = null
+    try {
+      payload = await response.json()
+    } catch {
+      setVisionError('Vision response was invalid.', { allowRetry: true })
+      return
+    }
+
+    if (requestId !== visionSequenceCounter) {
+      return
+    }
+
+    const responseText = typeof payload?.text === 'string' ? payload.text.trim() : ''
+    if (!responseText) {
+      setVisionError('Vision response did not include description text.', { allowRetry: true })
+      return
+    }
+
     visionState = VISION_STATE_DESCRIBED
     visionStatusMessage = 'Description ready'
-    visionDescription = 'Vision describe preview is ready. API wiring lands in Milestone 3.'
+    visionDescription = responseText
   }
 
   async function startRecording() {

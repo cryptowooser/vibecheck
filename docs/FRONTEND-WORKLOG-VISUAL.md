@@ -2,6 +2,34 @@
 
 ## 2026-02-28
 
+### Milestone 3 - end-to-end vision flow wiring
+- Replaced the milestone-2 simulated describe path in `frontend-prototype/frontend/src/App.svelte` with real backend integration:
+  - `Describe` now submits multipart `FormData` (`image`) to `POST /api/vision`
+  - successful responses render backend `text` content in the Image Description panel
+  - non-2xx and transport failures map to actionable UI errors with retry guidance (`Tap Describe to retry.`)
+  - selected image is preserved across failures so retry uses the same current selection
+- Updated visual state handling in `App.svelte`:
+  - no-file-selected (camera/gallery cancel or blocked return) now sets clear status guidance: `No image selected. Choose Take Photo or Upload Photo.`
+  - retained stale-response guard behavior via `visionSequenceCounter`
+  - removed the artificial describe-delay timer used in milestone-2 preview simulation
+- Expanded frontend unit coverage in `frontend-prototype/frontend/src/App.test.js`:
+  - verifies multipart submit to `/api/vision` and response-text rendering
+  - verifies error -> retry -> success flow while keeping image selection
+  - verifies no-file-selected guidance text branch
+- Expanded frontend e2e smoke coverage in `frontend-prototype/frontend/e2e/mobile-smoke.spec.js`:
+  - visual describe flow now stubs `/api/vision` and asserts real response rendering
+  - added transient-failure retry scenario
+  - updated idle-cancel expectation for new no-file-selected guidance text
+- Installed missing Playwright browser binaries for local e2e execution:
+  - `cd frontend-prototype/frontend && npx playwright install chromium webkit`
+- Verification run:
+  - `cd frontend-prototype/frontend && npm test -- src/App.test.js -t "App visual milestone 3 end-to-end flow"` -> passed (`11` tests in scope)
+  - `cd frontend-prototype/frontend && npm test` -> passed (`38` tests)
+  - `cd frontend-prototype/frontend && npm run test:e2e -- --grep "mobile visual flow"` -> passed (`8` tests)
+  - `cd frontend-prototype/frontend && npm run test:e2e` -> passed (`22` tests)
+  - `cd frontend-prototype/frontend && npm run test:secrets` -> passed
+  - `cd frontend-prototype/frontend && npm run build` -> passed
+
 ### Milestone 2 - frontend visual UI extension in existing app
 - Extended `frontend-prototype/frontend/src/App.svelte` with additive visual controls and state handling:
   - `Take Photo` trigger wired to hidden capture input (`accept="image/*"`, `capture="environment"`)
