@@ -48,6 +48,8 @@ def test_ws_rejects_invalid_psk(ws_client: TestClient) -> None:
 
 
 def test_ws_connects_with_valid_psk_and_sends_connected_event(ws_client: TestClient) -> None:
+    ws_module.session_manager.attach("session-2")
+
     with ws_client.websocket_connect("/ws/events/session-2?psk=dev-psk") as websocket:
         connected = websocket.receive_json()
         state = websocket.receive_json()
@@ -110,6 +112,15 @@ def test_backlog_is_delivered_on_connect(ws_client: TestClient) -> None:
     assert state["type"] == "state"
     assert backlog_event["type"] == "assistant"
     assert backlog_event["content"] == "from backlog"
+
+
+def test_ws_rejects_unknown_session_and_does_not_attach(ws_client: TestClient) -> None:
+    with ws_client.websocket_connect("/ws/events/ghost-session?psk=dev-psk") as websocket:
+        with pytest.raises(WebSocketDisconnect) as exc:
+            websocket.receive_json()
+
+    assert exc.value.code == 4404
+    assert "ghost-session" not in ws_module.session_manager.sessions
 
 
 def test_two_sessions_get_independent_backlogs(ws_client: TestClient) -> None:

@@ -1,22 +1,73 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import dataclass
+from importlib import import_module
 import json
 from collections import deque
 from pathlib import Path
-from typing import Literal
+import sys
+from typing import Any, Literal
+from uuid import uuid4
 
 from vibecheck.events import (
     ApprovalRequestEvent,
     ApprovalResolutionEvent,
+    AssistantEvent,
     Event,
     InputRequestEvent,
     InputResolutionEvent,
     StateChangeEvent,
+    ToolCallEvent,
+    ToolResultEvent,
     UserMessageEvent,
 )
 
 BridgeState = Literal["idle", "running", "waiting_approval", "waiting_input", "disconnected"]
+
+
+@dataclass(frozen=True, slots=True)
+class VibeRuntime:
+    agent_loop_cls: type
+    vibe_config_cls: type
+    approval_yes: object
+    approval_no: object
+    ask_result_cls: type | None
+    answer_cls: type | None
+
+
+def _import_vibe_module(module_name: str):
+    try:
+        return import_module(module_name)
+    except ModuleNotFoundError:
+        repo_root = Path(__file__).resolve().parent.parent
+        fallback = repo_root / "reference" / "mistral-vibe"
+        fallback_str = str(fallback)
+        if fallback.exists() and fallback_str not in sys.path:
+            sys.path.append(fallback_str)
+        return import_module(module_name)
+
+
+def load_vibe_runtime() -> VibeRuntime:
+    try:
+        agent_loop_module = _import_vibe_module("vibe.core.agent_loop")
+        config_module = _import_vibe_module("vibe.core.config")
+        types_module = _import_vibe_module("vibe.core.types")
+        ask_module = _import_vibe_module("vibe.core.tools.builtins.ask_user_question")
+    except Exception as exc:  # pragma: no cover - exercised in integration envs
+        raise RuntimeError(
+            "Mistral Vibe runtime is not available. Install `vibe` or provide "
+            "`reference/mistral-vibe` in this workspace."
+        ) from exc
+
+    return VibeRuntime(
+        agent_loop_cls=agent_loop_module.AgentLoop,
+        vibe_config_cls=config_module.VibeConfig,
+        approval_yes=types_module.ApprovalResponse.YES,
+        approval_no=types_module.ApprovalResponse.NO,
+        ask_result_cls=getattr(ask_module, "AskUserQuestionResult", None),
+        answer_cls=getattr(ask_module, "Answer", None),
+    )
 
 
 class SessionBridge:
@@ -31,10 +82,22 @@ class SessionBridge:
         self.connection_manager = connection_manager
         self.messages_to_inject: list[str] = []
 
+        self._background_tasks: set[asyncio.Task[object]] = set()
+        self._message_queue: asyncio.Queue[str] = asyncio.Queue()
+        self._message_worker_task: asyncio.Task[None] | None = None
+        self._run_lock = asyncio.Lock()
+        self._agent_loop: object | None = None
+        self._vibe_runtime: VibeRuntime | None = None
+        self._observed_message_ids: set[str] = set()
+
     async def _broadcast(self, event: Event) -> None:
         self.add_event(event)
         if self.connection_manager:
             await self.connection_manager.broadcast(self.session_id, event)
+
+    def _track_task(self, task: asyncio.Task[object]) -> None:
+        self._background_tasks.add(task)
+        task.add_done_callback(self._background_tasks.discard)
 
     def _broadcast_background(self, event: Event) -> None:
         self.add_event(event)
@@ -44,7 +107,8 @@ class SessionBridge:
             loop = asyncio.get_running_loop()
         except RuntimeError:
             return
-        loop.create_task(self.connection_manager.broadcast(self.session_id, event))
+        task = loop.create_task(self.connection_manager.broadcast(self.session_id, event))
+        self._track_task(task)
 
     def add_event(self, event: Event) -> None:
         self.event_backlog.append(event)
@@ -52,11 +116,17 @@ class SessionBridge:
     def backlog(self, limit: int = 50) -> list[Event]:
         return list(self.event_backlog)[-limit:]
 
+    def _set_state(self, state: BridgeState) -> None:
+        if self.state == state:
+            return
+        self.state = state
+        self._broadcast_background(StateChangeEvent(state=state))
+
     async def request_approval(self, call_id: str, tool_name: str, args: dict) -> dict:
         future: asyncio.Future = asyncio.get_running_loop().create_future()
         self.pending_approval[call_id] = future
         self.pending_approval_context[call_id] = {"tool_name": tool_name, "args": args}
-        self.state = "waiting_approval"
+        self._set_state("waiting_approval")
         await self._broadcast(ApprovalRequestEvent(call_id=call_id, tool_name=tool_name, args=args))
         result = await future
         return result
@@ -68,7 +138,7 @@ class SessionBridge:
             return False
         if not future.done():
             future.set_result({"approved": approved, "edited_args": edited_args})
-        self.state = "running"
+        self._set_state("running")
         self._broadcast_background(
             ApprovalResolutionEvent(call_id=call_id, approved=approved, edited_args=edited_args)
         )
@@ -81,7 +151,7 @@ class SessionBridge:
             "question": question,
             "options": list(options or []),
         }
-        self.state = "waiting_input"
+        self._set_state("waiting_input")
         await self._broadcast(
             InputRequestEvent(request_id=request_id, question=question, options=options or [])
         )
@@ -95,14 +165,245 @@ class SessionBridge:
             return False
         if not future.done():
             future.set_result(response)
-        self.state = "running"
+        self._set_state("running")
         self._broadcast_background(InputResolutionEvent(request_id=request_id, response=response))
         return True
 
+    def _message_to_dict(self, value: object) -> dict:
+        if hasattr(value, "model_dump"):
+            return dict(value.model_dump(mode="json"))
+        if isinstance(value, dict):
+            return dict(value)
+        return {"value": str(value)}
+
+    def _extract_input_question(self, args: object) -> tuple[str, list[str], list[str]]:
+        default_question = "Input requested"
+        options: list[str] = []
+        all_questions: list[str] = []
+
+        questions = getattr(args, "questions", None)
+        if not isinstance(questions, list) or not questions:
+            return default_question, options, all_questions
+
+        first = questions[0]
+        if isinstance(getattr(first, "question", None), str):
+            default_question = first.question
+
+        for item in questions:
+            text = getattr(item, "question", None)
+            if isinstance(text, str) and text:
+                all_questions.append(text)
+
+        raw_options = getattr(first, "options", None)
+        if isinstance(raw_options, list):
+            for option in raw_options:
+                label = getattr(option, "label", None)
+                options.append(str(label) if label is not None else str(option))
+
+        return default_question, options, all_questions
+
+    def _build_input_result(self, answer_text: str, question_texts: list[str]) -> object:
+        runtime = self._vibe_runtime
+        if runtime is None or runtime.ask_result_cls is None or runtime.answer_cls is None:
+            return {"response": answer_text}
+
+        prompts = question_texts or ["Input requested"]
+        answers = [
+            runtime.answer_cls(question=prompt, answer=answer_text, is_other=False)
+            for prompt in prompts
+        ]
+        return runtime.ask_result_cls(answers=answers, cancelled=False)
+
+    async def _approval_callback(
+        self, tool_name: str, args: object, tool_call_id: str
+    ) -> tuple[object, str | None]:
+        approval = await self.request_approval(
+            call_id=tool_call_id,
+            tool_name=tool_name,
+            args=self._message_to_dict(args),
+        )
+        runtime = self._vibe_runtime
+        yes = runtime.approval_yes if runtime else "y"
+        no = runtime.approval_no if runtime else "n"
+        feedback = None
+        edited_args = approval.get("edited_args")
+        if edited_args is not None:
+            feedback = json.dumps(edited_args, ensure_ascii=True)
+        return (yes if approval.get("approved") else no, feedback)
+
+    async def _user_input_callback(self, args: object) -> object:
+        question, options, prompts = self._extract_input_question(args)
+        request_id = f"req-{uuid4().hex[:8]}"
+        response = await self.request_input(request_id=request_id, question=question, options=options)
+        return self._build_input_result(response, prompts)
+
+    def _on_message_observed(self, message: object) -> None:
+        message_id = getattr(message, "message_id", None)
+        if isinstance(message_id, str):
+            if message_id in self._observed_message_ids:
+                return
+            self._observed_message_ids.add(message_id)
+
+        role = getattr(message, "role", None)
+        role_value = getattr(role, "value", role)
+        content = getattr(message, "content", None)
+        if not isinstance(content, str) or not content:
+            return
+
+        if role_value == "assistant":
+            self._broadcast_background(AssistantEvent(content=content))
+        elif role_value == "user":
+            self._broadcast_background(UserMessageEvent(content=content))
+
+    def _convert_vibe_event(self, raw_event: object) -> Event | None:
+        kind = raw_event.__class__.__name__
+
+        if kind.endswith("UserMessageEvent"):
+            message_id = getattr(raw_event, "message_id", None)
+            if isinstance(message_id, str):
+                if message_id in self._observed_message_ids:
+                    return None
+                self._observed_message_ids.add(message_id)
+            content = getattr(raw_event, "content", "")
+            return UserMessageEvent(content=str(content))
+
+        if kind.endswith("AssistantEvent"):
+            message_id = getattr(raw_event, "message_id", None)
+            if isinstance(message_id, str):
+                if message_id in self._observed_message_ids:
+                    return None
+                self._observed_message_ids.add(message_id)
+            content = getattr(raw_event, "content", "")
+            return AssistantEvent(content=str(content))
+
+        if kind.endswith("ToolCallEvent"):
+            return ToolCallEvent(
+                tool_name=str(getattr(raw_event, "tool_name", "tool")),
+                args=self._message_to_dict(getattr(raw_event, "args", {})),
+                call_id=str(getattr(raw_event, "tool_call_id", "")),
+            )
+
+        if kind.endswith("ToolResultEvent"):
+            call_id = str(getattr(raw_event, "tool_call_id", ""))
+            error = getattr(raw_event, "error", None)
+            if isinstance(error, str) and error:
+                return ToolResultEvent(call_id=call_id, output=error, is_error=True)
+
+            result = getattr(raw_event, "result", None)
+            if hasattr(result, "model_dump"):
+                output = json.dumps(result.model_dump(mode="json"), ensure_ascii=True)
+            elif result is None:
+                output = ""
+            else:
+                output = str(result)
+            return ToolResultEvent(call_id=call_id, output=output, is_error=False)
+
+        return None
+
+    def _ensure_agent_loop(self) -> None:
+        if self._agent_loop is not None:
+            return
+
+        runtime = load_vibe_runtime()
+        config = runtime.vibe_config_cls.load()
+        try:
+            agent_loop = runtime.agent_loop_cls(
+                config,
+                message_observer=self._on_message_observed,
+                enable_streaming=False,
+            )
+        except TypeError:
+            agent_loop = runtime.agent_loop_cls(
+                config,
+                message_observer=self._on_message_observed,
+            )
+
+        agent_loop.set_approval_callback(self._approval_callback)
+        agent_loop.set_user_input_callback(self._user_input_callback)
+        self._agent_loop = agent_loop
+        self._vibe_runtime = runtime
+
+    async def _run_agent_turn(self, content: str) -> None:
+        if self._agent_loop is None:
+            return
+
+        self._set_state("running")
+        async with self._run_lock:
+            try:
+                async for raw_event in self._agent_loop.act(content):
+                    event = self._convert_vibe_event(raw_event)
+                    if event is not None:
+                        await self._broadcast(event)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:  # pragma: no cover - integration behavior
+                await self._broadcast(
+                    AssistantEvent(content=f"Bridge failed to process agent event: {exc}")
+                )
+
+    async def _message_worker(self) -> None:
+        while True:
+            content = await self._message_queue.get()
+            try:
+                await self._run_agent_turn(content)
+            finally:
+                self._message_queue.task_done()
+                if (
+                    self.state == "running"
+                    and not self.pending_approval
+                    and not self.pending_input
+                    and self._message_queue.empty()
+                ):
+                    self._set_state("idle")
+
+    def _ensure_message_worker(self) -> None:
+        if self._message_worker_task is not None and not self._message_worker_task.done():
+            return
+        loop = asyncio.get_running_loop()
+        task: asyncio.Task[None] = loop.create_task(self._message_worker())
+        self._message_worker_task = task
+        self._track_task(task)
+
+    async def start_session(self, message: str, working_dir: Path | None = None) -> None:
+        _ = working_dir
+        self._ensure_agent_loop()
+        self._message_queue.put_nowait(message)
+        self._ensure_message_worker()
+        await self._message_queue.join()
+
     def inject_message(self, content: str) -> None:
         self.messages_to_inject.append(content)
-        self.state = "running"
-        self._broadcast_background(UserMessageEvent(content=content))
+        self._set_state("running")
+
+        if self._agent_loop is None:
+            try:
+                self._ensure_agent_loop()
+            except RuntimeError:
+                self._broadcast_background(UserMessageEvent(content=content))
+                return
+
+        self._message_queue.put_nowait(content)
+        try:
+            self._ensure_message_worker()
+        except RuntimeError:
+            # If no running loop is available, keep the message queued for the next
+            # async context and still reflect the message in UI immediately.
+            self._broadcast_background(UserMessageEvent(content=content))
+
+    def stop(self) -> None:
+        if self._message_worker_task and not self._message_worker_task.done():
+            self._message_worker_task.cancel()
+        self._message_worker_task = None
+
+        for task in list(self._background_tasks):
+            task.cancel()
+        self._background_tasks.clear()
+
+        self.pending_approval.clear()
+        self.pending_input.clear()
+        self.pending_approval_context.clear()
+        self.pending_input_context.clear()
+        self._set_state("disconnected")
 
     def state_payload(self) -> dict:
         payload: dict[str, object] = {"state": self.state}
@@ -179,7 +480,19 @@ class SessionManager:
         return bridge
 
     def detach(self, session_id: str) -> None:
-        self.sessions.pop(session_id, None)
+        bridge = self.sessions.pop(session_id, None)
+        if bridge is not None:
+            bridge.stop()
+
+    async def start_session(
+        self,
+        session_id: str,
+        message: str,
+        working_dir: Path | None = None,
+    ) -> SessionBridge:
+        bridge = self.attach(session_id)
+        await bridge.start_session(message=message, working_dir=working_dir)
+        return bridge
 
     def get(self, session_id: str) -> SessionBridge:
         bridge = self.sessions.get(session_id)

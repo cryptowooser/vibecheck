@@ -12,6 +12,7 @@ from fastapi.staticfiles import StaticFiles
 
 from vibecheck.auth import PSKAuthMiddleware, load_psk
 from vibecheck.routes.api import router as api_router
+from vibecheck.ws import bind_session_manager
 from vibecheck.ws import router as ws_router
 
 
@@ -37,6 +38,7 @@ def static_file(path: Path) -> FileResponse:
 
 def create_app() -> FastAPI:
     load_psk()
+    bind_session_manager()
     app = FastAPI(title="vibecheck", lifespan=lifespan)
 
     app.add_middleware(

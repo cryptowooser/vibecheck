@@ -14,10 +14,15 @@ class ConnectionManager:
     def __init__(self) -> None:
         self.rooms: dict[str, set[WebSocket]] = {}
         self.socket_to_session: dict[WebSocket, str] = {}
-        self._expected_psk = load_psk()
+        self._expected_psk: str | None = None
+
+    def _get_expected_psk(self) -> str:
+        if self._expected_psk is None:
+            self._expected_psk = load_psk()
+        return self._expected_psk
 
     async def connect(self, websocket: WebSocket, session_id: str, psk: str | None) -> bool:
-        if not is_psk_valid(psk, self._expected_psk):
+        if not is_psk_valid(psk, self._get_expected_psk()):
             await websocket.close(code=4401)
             return False
         await websocket.accept()
@@ -83,7 +88,10 @@ async def _send_heartbeats(websocket: WebSocket) -> None:
 
 router = APIRouter()
 manager = ConnectionManager()
-session_manager.set_connection_manager(manager)
+
+
+def bind_session_manager() -> None:
+    session_manager.set_connection_manager(manager)
 
 
 @router.websocket("/ws/events/{session_id}")
@@ -91,6 +99,11 @@ async def events(websocket: WebSocket, session_id: str) -> None:
     provided_psk = websocket.query_params.get("psk")
     connected = await manager.connect(websocket=websocket, session_id=session_id, psk=provided_psk)
     if not connected:
+        return
+
+    if not session_manager.has_known_session(session_id):
+        await websocket.close(code=4404)
+        await manager.disconnect(websocket)
         return
 
     bridge = session_manager.attach(session_id)
