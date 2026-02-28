@@ -12,7 +12,7 @@
 - [Equipment & Setup](#equipment--setup)
 - [Screen Layout](#screen-layout)
 - [Pre-Demo Checklist](#pre-demo-checklist)
-- [Demo Script](#demo-script)
+- [Demo Scripts](#demo-scripts) (2-min video + 5-min live)
 - [Fallback Plan](#fallback-plan)
 
 ---
@@ -34,7 +34,7 @@ sudo pacman -S presenterm
 - Speaker notes (visible in presenter mode)
 - Seamless transition: quit slides → you're in the same terminal → run Vibe
 
-**Create slides:**
+**Create slides (3 slides max for the 5-min live):**
 ```markdown
 ---
 title: vibecheck
@@ -42,42 +42,44 @@ theme:
   name: dark
 ---
 
-# vibecheck
+<!-- Slide 1: ASCII Logo — hold for 10 seconds -->
+
+```text
+ ██▒   █▓ ██▓ ▄▄▄▄   ▓█████  ▄████▄   ██░ ██ ▓█████  ▄████▄   ██ ▄█▀
+▓██░   █▒▓██▒▓█████▄ ▓█   ▀ ▒██▀ ▀█  ▓██░ ██▒▓█   ▀ ▒██▀ ▀█   ██▄█▒
+ ▓██  █▒░▒██▒▒██▒ ▄██▒███   ▒▓█    ▄ ▒██▀▀██░▒███   ▒▓█    ▄  ▓███▄░
+  ▒██ █░░░██░▒██░█▀  ▒▓█  ▄ ▒▓▓▄ ▄██▒░▓█ ░██ ▒▓█  ▄ ▒▓▓▄ ▄██▒▓██ █▄
+   ▒▀█░  ░██░░▓█  ▀█▓░▒████▒▒ ▓███▀ ░░▓█▒░██▓░▒████▒▒ ▓███▀ ░▒██▒ █▄
+   ░ ▐░  ░▓  ░▒▓███▀▒░░ ▒░ ░░ ░▒ ▒  ░ ▒ ░░▒░▒░░ ▒░ ░░ ░▒ ▒  ░▒ ▒▒ ▓▒
+```
 
 check your vibes from anywhere
 
 <!-- end_slide -->
 
-## Vibe from anywhere
+<!-- Slide 2: Problem (spoken, not much text on slide) -->
 
-- TUI Agentic Coding is great
-- Agents should keep working even if you're not at your terminal
-- Vibe doesn't have a good mobile solution yet
+## the problem
 
-## Architecture
+your agent codes. then it stops and waits.
+you've walked away.
 
-We like Python
+<!-- end_slide -->
+
+<!-- Slide 3: Architecture + Models (brief) -->
+
+## how it works
 
 ![](./slides/architecture.png)
 
-<!-- end_slide -->
-
-## Models
-Why not all of them?
-
-```python
-# Devstral 2 — coding agent (via Vibe)
-# Voxtral — realtime voice transcription (push-to-talk)
-# Ministral — notification copy + urgency + tool call summaries
-# Mistral Large — EN↔JA translation + (optional) screenshot/excerpt explanations
-```
+**Devstral** codes · **Voxtral** transcribes · **Ministral** notifies · **Mistral Large** translates
 
 <!-- end_slide -->
 
-OK, any of this, let's demo
-
-<!-- Demo starts here — quit presenterm, you're in the terminal -->
+<!-- Transition: press q, you're in the terminal → demo starts -->
 ```
+
+Note: ASCII logo is a placeholder — replace with the actual generated logo. The logo should also appear in the PWA splash/header for brand consistency.
 
 **Run:**
 ```bash
@@ -269,84 +271,245 @@ ssh ec2
 
 ---
 
-## Demo Script
+## Demo Scripts
 
-### Beat 1: The Problem (presenterm)
+We have two deliverables: a **2-minute pre-recorded video** (submitted to hackiterate) and a **5-minute live presentation** (to jury). They share the same story arc but have very different pacing.
 
-*"You're running an AI coding agent — Mistral Vibe — on your dev machine. It's writing code, running tests, building features. But every few minutes it stops and asks: 'Can I run this command?' 'Should I create this file?' You're stuck at your desk."*
+Each beat is annotated with the **judging criteria** it targets:
+- **T** = Technicity (20%) — technical depth, architecture
+- **C** = Creativity (20%) — novelty, originality
+- **U** = Usefulness (20%) — real problem, would people use it
+- **D** = Demo (20%) — presentation quality, wow factor
+- **A** = Track Alignment (20%) — Mistral models, Vibe integration
 
-*"What if you could check on your agent from your phone?"*
+---
 
-### Beat 2: Architecture (presenterm, 1 min)
+### SCRIPT A: 2-Minute Video (hackiterate submission)
 
-Architecture diagram displayed inline via Kitty graphics protocol:
+**Format:** Single continuous screen capture — 50/50 split the entire time. Left: terminal (logo/slides → Vibe). Right: scrcpy (phone). Voiceover narration.
+**Pacing:** ~280 words total. Every second counts. No cuts or transitions.
+**Goal:** "Stop scrolling" moment. Judges watch this cold, without us in the room.
+
+**Screen layout (entire video):**
 ```
-Phone → HTTPS → EC2 (Caddy + vibecheck bridge + Vibe)
+┌─────────────────────────┬──────────────────────────┐
+│  TERMINAL (left 50%)    │  SCRCPY (right 50%)      │
+│                         │  Phone showing vibecheck  │
+│  Starts: ASCII logo +   │  PWA — live the whole     │
+│  key points             │  time                     │
+│                         │                           │
+│  Then: Vibe running     │                           │
+│  (clear logo, show      │                           │
+│  agent output)          │                           │
+└─────────────────────────┴──────────────────────────┘
 ```
 
-*"We hook directly into Vibe's Python event system — no terminal scraping. Typed events, clean callbacks."*
+#### V1. Logo + Hook [0:00–0:15] — C, U
 
-Model usage slide: Devstral 2 (coding), Voxtral (voice), Ministral (notifications), Mistral Large (translation + optional image/excerpt explainers).
+Left: ASCII logo + key bullet points (tagline, model names, etc.).
+Right: Phone showing vibecheck PWA — already connected, session visible.
 
-### Beat 3: Live Demo — Core Loop
+> *"You vibecode. Your agent stops and waits for you. You've walked away. It just sits there."*
 
-**Quit presenterm (q) → you're in the terminal. Open scrcpy alongside. Switch to 50/50 Niri layout.**
+> *"vibecheck — mission control for your Vibe agents, right from your phone."*
 
-1. **Show Vibe running** on the left (terminal). Give it a task: *"Create a REST API endpoint for user authentication"*
-2. **Show phone** on the right (scrcpy). Events streaming in real time — assistant messages, tool calls.
-3. Vibe asks for approval → **phone shows approval panel** → tap Approve on the phone → Vibe continues on terminal.
+(The logo sits on the left while the phone is already live on the right. Audience sees the product immediately.)
 
-*"That's the core loop. Your agent works, you approve from your pocket."*
+#### V2. Core Loop — Approve From Phone [0:15–0:50] — D, T, A
 
-### Beat 4: Voice Input
+Left: Clear the logo, Vibe is now running — agent working on a task, output scrolling.
+Right: Events stream to the phone in real time. Approval prompt appears. Tap Approve. Vibe continues on the left.
 
-1. Tap the mic button on phone → **speak in Japanese**: "テストを実行して" (run the tests)
-2. Voxtral transcribes → Japanese text appears in input → send
-3. Vibe receives the message and acts
+> *"Your agent writes code, runs tools — everything streams to your phone live. When it needs approval, tap. It keeps going. That's the loop."*
 
-*"Voxtral transcribes Japanese at $0.003/minute. Push-to-talk, release, confirm, send."*
+(Let the real-time streaming breathe for a few seconds. The responsiveness sells itself.)
 
-### Beat 5: Push Notifications
+#### V3. Voice in Japanese [0:50–1:10] — D, C, A
 
-1. **Close the PWA** on the phone (swipe away)
-2. On terminal: Vibe hits a point where it needs approval
-3. **Phone buzzes** — push notification appears: "🔧 Vibe Check: bash wants to run npm test"
-4. Tap Approve directly from the notification (Android action button)
-5. Vibe continues
+Left: Vibe terminal continues.
+Right: Tap mic on phone. Speak in Japanese: "テストを実行して". Transcription appears. Send. Vibe acts on the left.
 
-*"You don't even need the app open. Approve from your lock screen."*
+> *"Push-to-talk. Voxtral transcribes Japanese in real time. Talk to your agent in any language."*
 
-### Beat 6: Translation
+#### V4. Push Notifications — Lock Screen Approval [1:10–1:30] — U, D
 
-1. Open the PWA again
-2. Vibe has produced English output
-3. Tap `🌐 自動翻訳` on a message → **Japanese translation appears instantly**
-4. Show global toggle in settings → all messages auto-translate
+Left: Vibe terminal continues working.
+Right: Close the PWA (swipe away). Vibe hits an approval. Phone buzzes. Notification: "bash wants to run npm test". Tap Approve from lock screen. Vibe continues.
 
-*"For the Tokyo audience — everything in Japanese with one toggle. Powered by Mistral Large."*
+> *"Close the app. Walk away. Your phone buzzes when the agent needs you. Approve from your lock screen."*
 
-### (Optional) Beat 6b: Images / Excerpts → Explain
+#### V5. Feature Montage + Close [1:30–1:50] — A, T, C
 
-1. On phone (or terminal): paste an error excerpt/log snippet, or a screenshot (OCR → text)
-2. Tap "Explain (JP)" → Mistral Large returns a short Japanese explanation and suggested next action
+Left: Return to ASCII logo + key points (or keep Vibe running).
+Right: Quick feature flashes on phone — session list with multiple agents, tap translate on a message (Japanese appears), intensity slider from Chill to Ralph.
 
-*"This is great for debugging from your pocket — even when the original output is a messy wall of English."*
+> *"Multi-session. Japanese translation. Four Mistral models — Devstral, Voxtral, Ministral, Mistral Large — each in its natural role. vibecheck. Check your vibes from anywhere."*
 
-### Beat 7: Intensity (if time)
+**[END — ~1:50]** (10 seconds buffer)
 
-Show the intensity slider: *"How hard are you going?"*
-- Slide to 🔥 Locked In — show escalating idle notifications
-- Slide to 💀 Ralph — *"Named after Ralph Wiggum. Your agent won't stop and neither will your notifications."*
+**Criteria coverage:** U hit in V1, V4. D hit in V2, V3, V4. A hit in V1, V2, V3, V5. C hit in V1, V3, V5. T hit in V2, V5. All five covered, heaviest on the three the organizer emphasizes (U, D, C).
 
-### Beat 8: QR Code (the closer)
+**Recording notes:**
+- One take, one screen capture — no editing/cuts needed (though you can re-record)
+- Start with logo already displayed + phone already connected before hitting record
+- The left terminal transition (logo → Vibe output) is just clearing the screen / switching tmux panes
+- Voiceover can be recorded live or dubbed after (dub is safer for pacing)
 
-Put a QR code on screen → the EC2 URL.
+---
 
-*"Want to try it? Open your phone camera."*
+### SCRIPT B: 5-Minute Live Presentation (jury)
 
-Audience opens the PWA on their own phones. They can see the live agent session in read-only mode.
+**Format:** Phase 1 slides (~60s, 3 slides max) → Phase 2 live demo (~180s) → Phase 3 stretch features + close (~60s).
+**Pacing:** ~700 words spoken. Room for improvisation and audience reaction.
+**Goal:** Theatrical, memorable. Judges are in the room — energy matters. **Demo-heavy.**
 
-*"That's vibecheck. AI coding from your pocket."*
+#### Phase 1: Slides (presenterm, 3 slides max) [0:00–1:00]
+
+##### B1. Title Slide — ASCII Logo [0:00–0:10] — C, D
+
+Slide: ASCII art vibecheck logo fills the terminal. Clean, bold, sets the tone.
+
+(Let it land for a beat. The logo in a terminal is a vibe.)
+
+> *"vibecheck."*
+
+##### B2. The Problem [0:10–0:35] — U, C
+
+> *"Raise your hand if you've done some vibecoding this weekend."*
+
+(Pause for hands.)
+
+> *"Me too. Here's the thing — your agent is coding, and then it stops. 'Can I run npm test?' And if you've walked away... it just sits there. Blocked. Waiting for you."*
+
+> *"We got tired of being chained to our terminals. So we built vibecheck — mission control for your Vibe agents, from your phone."*
+
+##### B3. Architecture + Models [0:35–0:55] — T, A
+
+Slide: Architecture diagram (Phone → HTTPS → EC2 → vibecheck bridge → Vibe AgentLoop).
+Below or next slide: Model list — one line each.
+
+> *"We hook directly into Vibe's AgentLoop — typed events, clean callbacks, in-process. Four Mistral models: Devstral codes, Voxtral transcribes voice, Ministral handles notifications, Mistral Large does translation. Each in its natural role."*
+
+(Keep this tight — 20 seconds. The demo will show all of this working.)
+
+##### B4. Transition [0:55–1:00] — D
+
+> *"OK, let me show you."*
+
+**Press q → exit presenterm → resize to 50/50 → scrcpy opens alongside terminal.**
+
+(The seamless terminal-to-demo transition is itself a small wow moment.)
+
+#### Phase 2: Live Demo [1:00–3:40]
+
+This is the heart of the presentation. **2 minutes 40 seconds of live product.** Let it breathe.
+
+##### B5. Core Loop — Approve From Phone [1:00–2:00] — D, U, T
+
+1. Terminal (left): Vibe is running, working on a task.
+2. Phone (right): Events stream in — assistant messages, tool calls appear in real time.
+3. Vibe asks for approval → phone shows approval panel.
+4. **Tap Approve on the phone → Vibe continues on terminal.**
+
+> *"That's the core loop. Agent works, you approve from your pocket."*
+
+(Let Vibe run for a beat so the audience sees multiple events streaming. The real-time feel is the demo moment — don't rush past it. If a second approval comes up naturally, approve it too.)
+
+##### B6. Voice Input in Japanese [2:00–2:40] — D, C, A
+
+1. Tap mic on phone.
+2. **Speak in Japanese:** "テストを実行して" (run the tests).
+3. Voxtral transcribes → text appears → send.
+4. Vibe receives the instruction and acts.
+
+> *"Push-to-talk. Voxtral transcribes in real time — Japanese, English, whatever you speak."*
+
+(If this lands well and time allows, do a second voice command.)
+
+##### B7. Push Notifications [2:40–3:15] — U, D
+
+1. **Close the PWA** on the phone (swipe away — audience sees it disappear).
+2. On terminal: Vibe hits a tool call that needs approval.
+3. **Phone buzzes.** Notification appears on lock screen: "bash wants to run npm test".
+4. Tap Approve from the notification.
+5. Vibe continues.
+
+> *"Close the app. Walk away. Your phone buzzes. Approve from your lock screen. Your agent never stops."*
+
+##### B8. Translation [3:15–3:30] — A, C
+
+Tap the translate toggle on a message. Japanese appears.
+
+> *"One toggle — everything in Japanese. Mistral Large, code-aware. It knows not to translate your variable names."*
+
+##### B9. Multi-Session [3:30–3:40] — C, U
+
+Show the session switcher — 2-3 agents listed.
+
+> *"And you're not limited to one agent. Mission control — switch between them, approve one, check on another."*
+
+#### Phase 3: Close [3:40–4:50]
+
+##### B10. Intensity (if audience energy is right) [3:40–3:55] — C
+
+Show the intensity slider.
+
+> *"How hard are you going? Chill... Locked In... Ralph. Named after Ralph Wiggum. Your agent won't stop and neither will your notifications."*
+
+(Read the room — if time is tight or energy is winding down, skip this and go straight to QR.)
+
+##### B11. QR Code + Close [3:55–4:30] — D
+
+QR code on screen → the live URL. ASCII logo returns behind it.
+
+> *"Want to try it? Pull out your phone."*
+
+(Pause 10 seconds. Let people scan. Watch their faces when events appear on their phones.)
+
+> *"You're watching the live session right now. That's vibecheck — check your vibes from anywhere."*
+
+**[END — ~4:30]** (30 seconds buffer for applause / transition to Q&A)
+
+**Criteria coverage:** U anchors the open (B2) and mid-demo (B5, B7). D is sustained through the entire live demo phase — 2:40 of pure product. A is woven throughout (architecture slide, Vibe hooks, Voxtral, translation). T lands in B3 and is visible in B5's real-time streaming. C hits in B1 (logo), B2 (novelty framing), B6 (Japanese voice), B9 (multi-session), B10 (intensity personality).
+
+---
+
+### Timing Cheat Sheet
+
+| Beat | Video (2 min) | Live (5 min) | Primary Criteria |
+|------|---------------|--------------|------------------|
+| ASCII logo + key points | 15s (left side, phone live on right) | 10s (slide) | C, U |
+| Problem statement | (in logo voiceover) | 25s | U, C |
+| Architecture / Models | (on logo slide) | 20s (1 slide) | T, A |
+| Transition to demo | clear left pane | 5s (quit presenterm) | D |
+| **Core loop (approve from phone)** | **35s** | **60s** | **D, U, T** |
+| **Voice in Japanese** | **20s** | **40s** | **D, C, A** |
+| **Push notifications** | **20s** | **35s** | **U, D** |
+| Translation | 5s (phone montage) | 15s | A, C |
+| Multi-session | 5s (phone montage) | 10s | C, U |
+| Intensity | 3s (phone montage) | 15s (optional) | C |
+| Logo return + close | 7s | — | C |
+| QR + close | — | 35s | D |
+| **Total** | **~1:50** | **~4:30** | |
+| **Demo time** | **~1:30 (75%)** | **~2:55 (65%)** | |
+
+### Key Differences Between the Two Formats
+
+| | 2-Min Video | 5-Min Live |
+|---|---|---|
+| **Layout** | 50/50 the entire time (single screen capture) | Fullscreen slides → 50/50 demo |
+| **Slides** | Logo + key points on left terminal pane | 3 presenterm slides (logo, problem, arch) |
+| **Demo time** | ~75% of runtime | ~65% of runtime |
+| **Architecture** | Text on logo slide + voiceover | Slide with diagram, 20 seconds |
+| **Transitions** | Just clear the left pane (no cuts) | quit presenterm → resize to 50/50 |
+| **Audience interaction** | None (pre-recorded) | Hand raise, QR code, live reactions |
+| **Translation** | Phone-side feature flash | Quick live tap (15s) |
+| **Intensity/Multi-session** | Phone-side feature flash | Live if time allows |
+| **ASCII logo** | Left pane at start + end | Opens slides, returns at QR close |
+| **Tone** | Polished, tight, continuous | Theatrical, fun, conversational |
+| **Biggest risk** | Not showing enough features | Running over time |
+| **Mitigation** | Feature montage on phone at end | Know what to cut (intensity first) |
+| **Recording** | One take, no editing needed | Live performance |
 
 ---
 
