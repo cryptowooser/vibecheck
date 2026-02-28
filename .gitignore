@@ -204,6 +204,10 @@ cython_debug/
 .cursorignore
 .cursorindexingignore
 
+# vibecheck frontend build artifacts
+vibecheck/frontend/node_modules/
+vibecheck/static/
+
 # Marimo
 marimo/_static/
 marimo/_lsp/

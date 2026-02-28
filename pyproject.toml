@@ -1,0 +1,32 @@
+[build-system]
+requires = ["hatchling>=1.27.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "vibecheck"
+version = "0.1.0"
+description = "Mobile PWA bridge for Mistral Vibe"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+  "fastapi>=0.116.1",
+  "httpx>=0.28.1",
+  "mistralai>=1.9.11",
+  "pydantic>=2.11.7",
+  "pywebpush>=2.1.1",
+  "uvicorn[standard]>=0.35.0",
+  "websockets>=15.0.1",
+]
+
+[dependency-groups]
+dev = [
+  "pytest>=8.4.2",
+  "pytest-asyncio>=1.1.0",
+  "pytest-cov>=7.0.0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["vibecheck"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "strict"

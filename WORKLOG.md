@@ -29,3 +29,26 @@
 - Standardized REST and WS route parameter naming to `{session_id}` across examples and WU specs
 - Updated stale endpoint examples (`/api/approve`, `/api/input`, `/api/message`) to session-scoped paths
 - Standardized status wording to `disconnected` (replacing mixed `detached` usage in API planning text)
+
+### Phase 0 implementation (WU-01 + WU-02) redo
+- Rebuilt Phase 0 from scratch in a clean tree using tests-first flow:
+  - Added `vibecheck/tests/conftest.py` and `vibecheck/tests/test_auth.py` before implementation.
+  - Confirmed red state first (`ModuleNotFoundError: No module named 'vibecheck'`) using `uv run --with ... pytest`.
+- Implemented backend scaffold (`WU-01`) with root-level `pyproject.toml` and importable `vibecheck/` package:
+  - Added FastAPI app factory (`vibecheck/app.py`) with CORS, lifespan hook, API/WS router mounting.
+  - Added strict PSK middleware (`vibecheck/auth.py`) with fail-fast `VIBECHECK_PSK` requirement and timing-safe compare.
+  - Added stub REST routes (`vibecheck/routes/api.py`) and WS scaffold (`vibecheck/ws.py`) with connect event + 30s heartbeat.
+  - Added runtime entrypoint (`vibecheck/__main__.py`) for `uv run python -m vibecheck`.
+- Implemented frontend scaffold (`WU-02`) via `npm create vite@latest vibecheck/frontend -- --template svelte`:
+  - Configured `vite.config.js` proxy (`/api`, `/ws`) to `localhost:7870` and build output to `../static`.
+  - Replaced default app with mobile shell layout in `src/App.svelte` (safe-area insets, 44px targets, dark theme vars).
+  - Added PWA files (`public/manifest.json`, `public/sw.js`) and registered SW in `src/main.js`.
+  - Generated placeholder icons: `public/icons/vibe-192.png` and `public/icons/vibe-512.png`.
+- Updated ignore policy:
+  - Added `vibecheck/frontend/node_modules/` and `vibecheck/static/` to root `.gitignore`.
+- Verification results:
+  - `uv run pytest vibecheck/tests/test_auth.py -v` -> 6 passed.
+  - `uv run pytest vibecheck/tests/ -v` -> 6 passed.
+  - Backend smoke: `uv run python -m vibecheck` + `curl` checks (`/api/health` 200, `/api/state` with PSK 200, without PSK 401).
+  - Frontend: `cd vibecheck/frontend && npm install && npm run build` succeeded; output in `vibecheck/static/`.
+  - Frontend dev probe: `npm run dev` served on `:5173` and responded to `curl`.
