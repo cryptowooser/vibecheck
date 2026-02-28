@@ -218,3 +218,19 @@
   - `cd frontend-prototype/frontend && npm run build` -> succeeded.
   - `cd frontend-prototype/frontend && npm run test:e2e` -> 6 passed (`Mobile Chrome`, `Mobile Safari`).
   - `cd frontend-prototype/server && uv run pytest tests -v` -> 17 passed.
+
+### Frontend prototype backend hotfix (TTS stream consumed twice)
+- Investigated production-like runtime error during `/api/tts` playback: `httpx.StreamConsumed` raised from `server/app.py` while streaming ElevenLabs response.
+- Root cause: endpoint consumed `upstream_response.aiter_bytes()` once to probe first chunk, then called `aiter_bytes()` again in `stream_body()`. `httpx` streams are single-pass.
+- Added red-first regression test in `frontend-prototype/server/tests/test_api.py`:
+  - `test_tts_reads_upstream_stream_in_single_pass` uses a single-pass fake upstream response that raises `httpx.StreamConsumed` on second iterator construction.
+- Fixed `frontend-prototype/server/server/app.py`:
+  - create one shared iterator (`upstream_stream = upstream_response.aiter_bytes()`)
+  - read first non-empty chunk from that iterator
+  - continue streaming remaining chunks from the same iterator
+  - broadened stream-read exception handling to include `httpx.StreamError` in both preflight read and mid-stream path
+- Updated mid-stream failure test to model single-iterator semantics and keep expected abort behavior.
+- Verification:
+  - `cd frontend-prototype/server && uv run pytest tests/test_api.py::test_tts_reads_upstream_stream_in_single_pass -v` -> passed (after initial red failure).
+  - `cd frontend-prototype/server && uv run pytest tests -v` -> 18 passed.
+  - Startup smoke: `uv run uvicorn server.app:app --host 127.0.0.1 --port 8780` + `curl http://127.0.0.1:8780/health` -> `{"status":"ok"}`.

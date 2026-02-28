@@ -173,6 +173,36 @@ def test_tts_success_returns_audio(client: TestClient, monkeypatch: pytest.Monke
     assert response.content.startswith(b'ID3')
 
 
+def test_tts_reads_upstream_stream_in_single_pass(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv('ELEVENLABS_API_KEY', 'test-key')
+
+    class SinglePassResponse:
+        def __init__(self) -> None:
+            self._iterated = False
+            self._chunks = [b'ID3', b'audio-bytes']
+
+        async def aiter_bytes(self) -> AsyncIterator[bytes]:
+            if self._iterated:
+                raise httpx.StreamConsumed()
+            self._iterated = True
+            for chunk in self._chunks:
+                yield chunk
+
+        async def aclose(self) -> None:
+            return None
+
+    async def fake_open_stream(**_: object) -> tuple[FakeClient, SinglePassResponse]:
+        return FakeClient(), SinglePassResponse()
+
+    monkeypatch.setattr('server.app.open_tts_stream', fake_open_stream)
+
+    response = client.post('/api/tts', json={'text': 'hello', 'voice_id': 'voice-1'})
+
+    assert response.status_code == 200
+    assert response.headers['content-type'].startswith('audio/mpeg')
+    assert response.content == b'ID3audio-bytes'
+
+
 def test_tts_maps_upstream_errors(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv('ELEVENLABS_API_KEY', 'test-key')
 
@@ -204,13 +234,13 @@ def test_tts_midstream_failure_aborts_response(client: TestClient, monkeypatch: 
 
     class MidStreamFailingResponse:
         def __init__(self) -> None:
-            self._first = True
+            self._stream_started = False
 
         async def aiter_bytes(self) -> AsyncIterator[bytes]:
-            if self._first:
-                self._first = False
-                yield b'ID3'
-                return
+            if self._stream_started:
+                raise httpx.StreamConsumed()
+            self._stream_started = True
+            yield b'ID3'
             raise httpx.ReadError('stream broke')
 
         async def aclose(self) -> None:

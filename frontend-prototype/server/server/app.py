@@ -201,13 +201,14 @@ async def tts(request: TTSRequest) -> StreamingResponse:
     except UpstreamAPIError as error:
         raise _map_tts_error(error) from error
 
+    upstream_stream = upstream_response.aiter_bytes()
     first_chunk = b""
     try:
-        async for chunk in upstream_response.aiter_bytes():
+        async for chunk in upstream_stream:
             if chunk:
                 first_chunk = chunk
                 break
-    except httpx.HTTPError as error:
+    except (httpx.HTTPError, httpx.StreamError) as error:
         await upstream_response.aclose()
         await client.aclose()
         raise HTTPException(status_code=502, detail=f"TTS upstream read failed: {error}") from error
@@ -220,10 +221,10 @@ async def tts(request: TTSRequest) -> StreamingResponse:
     async def stream_body() -> AsyncIterator[bytes]:
         try:
             yield first_chunk
-            async for chunk in upstream_response.aiter_bytes():
+            async for chunk in upstream_stream:
                 if chunk:
                     yield chunk
-        except httpx.HTTPError as error:
+        except (httpx.HTTPError, httpx.StreamError) as error:
             # Response headers are already sent; re-raise so the connection aborts
             # and clients observe a stream failure rather than a silent truncation.
             logger.exception("TTS stream interrupted mid-response")
