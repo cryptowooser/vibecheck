@@ -2,6 +2,9 @@
 
 This folder provides a guided, repeatable manual test run for Phase 3.1 acceptance.
 
+For the full operator runbook (prereqs, exact commands, troubleshooting), see:
+`scripts/manual-test/manual-test.howto.md`
+
 ## Files
 
 - `capture.sh`: Starts `vibecheck-vibe` with terminal transcript capture (`script`).
@@ -16,6 +19,16 @@ This folder provides a guided, repeatable manual test run for Phase 3.1 acceptan
 - **Terminal B**: Interactive checklist runner  
   `scripts/manual-test/run.sh --base-url https://<your-domain>`
 - **Phone**: Open the same `https://<your-domain>` PWA and connect to the live session.
+
+## One-Time Runtime Preflight
+
+If `capture.sh` reports missing Vibe runtime dependencies, run:
+
+```bash
+uv pip install -e reference/mistral-vibe
+```
+
+This installs the reference Vibe package and required runtime dependencies into the current `uv` environment.
 
 ## Optional Pre-Configuration
 

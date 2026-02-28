@@ -299,3 +299,63 @@
   - `scripts/manual-test/api.sh --help`
   - `scripts/manual-test/tui_prompts.sh list`
   - `scripts/manual-test/capture.sh --help`
+
+### WU-34 runtime preflight hardening + environment sync
+- Encountered real runtime failure during manual launch: `ModuleNotFoundError: tomli_w` when loading reference Vibe modules from `reference/mistral-vibe/`.
+- Installed reference Vibe package/dependencies into the active uv environment:
+  - `uv pip install -e reference/mistral-vibe`
+  - Verified `load_vibe_runtime()` succeeds after install.
+- Hardened `scripts/manual-test/capture.sh` with a preflight runtime check:
+  - Runs `load_vibe_runtime()` before starting TUI.
+  - Fails fast with explicit remediation command instead of full traceback.
+- Updated `scripts/manual-test/README.md` with one-time preflight/install instruction.
+
+### WU-34 live launcher fix: unlock Vibe config paths
+- Encountered runtime error on live launch:
+  - `RuntimeError: Config path is locked` from `vibe/core/paths/config_paths.py` during `VibeConfig.load()`.
+- Root cause:
+  - `vibecheck.launcher` parsed Vibe args but did not run Vibe entrypoint `main()`, so `unlock_config_paths()` was never called.
+- Fix:
+  - Added `_unlock_vibe_config_paths()` in `vibecheck/launcher.py`.
+  - `_build_agent_loop(...)` now calls `_unlock_vibe_config_paths()` before `runtime.vibe_config_cls.load()`.
+- Added isolated regression test (without touching in-progress launcher test edits by other agent):
+  - `vibecheck/tests/test_launcher_config_unlock.py::test_build_agent_loop_unlocks_vibe_config_paths`
+- Verification:
+  - `uv run pytest vibecheck/tests/test_launcher_config_unlock.py -v` -> passed
+  - `uv run pytest vibecheck/tests/test_launcher.py::test_build_agent_loop_passes_message_observer -v` -> passed
+  - real-runtime probe:
+    - `uv run python -c "... _build_agent_loop(...)"` -> `ok AgentLoop`
+
+### WU-34 docs: dedicated operator HOWTO
+- Added `scripts/manual-test/manual-test.howto.md` with a clean end-to-end runbook:
+  - prerequisites, runtime/network assumptions
+  - exact Terminal A/B/phone commands
+  - scenario coverage mapping (S1-S7)
+  - artifact expectations
+  - troubleshooting for common failures:
+    - missing runtime deps (`tomli_w` / `vibe`)
+    - stylesheet path mismatch
+    - `llamacpp` connection failures when `active_model=local`
+- Updated `scripts/manual-test/README.md` to point to the new HOWTO as the canonical operator guide.
+
+### Phase 3.1 reviewer remediation (pre-WU-34 manual pass)
+- Hardened callback-owner discovery in `vibecheck/bridge.py` to avoid `__self__`-only fragility:
+  - Added wrapper-aware owner resolution across bound methods, `__wrapped__`, `functools.partial` (`func` / `args` / `keywords`), and closure-captured owners.
+  - Cached local approval/input owner hints on callback configuration and reused them during settle paths.
+  - Added warning log when a callable local callback exists but owner resolution fails at settle time.
+- Reduced mobile-first ordering flake risk in local TUI reset:
+  - Split reset into `_call_switch_to_input_app(...)` and `_reset_local_owner_ui(...)`.
+  - `_reset_local_owner_ui(...)` now performs immediate reset plus a follow-up `asyncio.sleep(0)` reset task to win late UI-switch races.
+- Restored path-prompt parity in `vibecheck/launcher.py`:
+  - Added `_render_path_prompt` import fallback (safe no-op when Vibe module unavailable).
+  - `_handle_agent_loop_turn(...)` now injects the rendered prompt (`render_path_prompt(prompt, base_dir=Path.cwd())`) before bridge queueing.
+- Added regression coverage:
+  - `test_settle_local_state_resolves_wrapped_and_partial_callbacks`
+  - `test_settle_local_state_schedules_follow_up_ui_reset`
+  - `test_handle_agent_loop_turn_renders_prompt_before_bridge_injection`
+  - Updated launcher on-mount tests to stub `_BaseVibeApp.__init__` / `run_worker` for environment-stable isolation when real Textual `VibeApp` is importable.
+- Verification:
+  - `uv run pytest vibecheck/tests/test_bridge.py::test_settle_local_state_resolves_wrapped_and_partial_callbacks -q` -> passed
+  - `uv run pytest vibecheck/tests/test_bridge.py::test_settle_local_state_schedules_follow_up_ui_reset -q` -> passed
+  - `uv run pytest vibecheck/tests/test_launcher.py::test_handle_agent_loop_turn_renders_prompt_before_bridge_injection -q` -> passed
+  - `uv run pytest vibecheck/tests/ -v` -> 65 passed
