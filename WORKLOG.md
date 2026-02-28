@@ -22,6 +22,7 @@
 - Updated `docs/IMPLEMENTATION.md` WU-01 to enforce strict PSK policy (`VIBECHECK_PSK` required, no default)
 - Updated WU-01 route contract to `WS /ws/events/{session_id}` and session-id REST placeholders
 - Updated WU-01 verification commands to explicit `export VIBECHECK_PSK=dev`, targeted auth tests, and full-suite gate
+- Updated WU-02 mobile acceptance note to target 360px–428px phone widths and retained explicit frontend build gate
 
 ### Documentation consistency pass (README → PLAN → IMPLEMENTATION)
 - Normalized session storage path references to `~/.vibe/logs/session/` across planning docs
@@ -38,10 +39,16 @@
   - Added strict PSK middleware (`vibecheck/auth.py`) with fail-fast `VIBECHECK_PSK` requirement and timing-safe compare.
   - Added stub REST routes (`vibecheck/routes/api.py`) and WS scaffold (`vibecheck/ws.py`) with connect event + 30s heartbeat.
   - Added runtime entrypoint (`vibecheck/__main__.py`) for `uv run python -m vibecheck`.
+- Implemented frontend scaffold (`WU-02`) via `npm create vite@latest vibecheck/frontend -- --template svelte`:
+  - Configured `vite.config.js` proxy (`/api`, `/ws`) to `localhost:7870` and build output to `../static`.
+  - Replaced default app with mobile shell layout in `src/App.svelte` (safe-area insets, 44px targets, dark theme vars).
+  - Added PWA files (`public/manifest.json`, `public/sw.js`) and registered SW in `src/main.js`.
+  - Generated placeholder icons: `public/icons/vibe-192.png` and `public/icons/vibe-512.png`.
+- Updated ignore policy:
+  - Added `vibecheck/frontend/node_modules/` and `vibecheck/static/` to root `.gitignore`.
 - Verification results:
   - `uv run pytest vibecheck/tests/test_auth.py -v` -> 6 passed.
   - `uv run pytest vibecheck/tests/ -v` -> 6 passed.
   - Backend smoke: `uv run python -m vibecheck` + `curl` checks (`/api/health` 200, `/api/state` with PSK 200, without PSK 401).
-
-### Frontend log split
-- Moved all frontend-specific entries from this file to `FRONTEND-WORKLOG.md`.
+  - Frontend: `cd vibecheck/frontend && npm install && npm run build` succeeded; output in `vibecheck/static/`.
+  - Frontend dev probe: `npm run dev` served on `:5173` and responded to `curl`.
