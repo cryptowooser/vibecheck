@@ -32,9 +32,13 @@ Vibe uses **Textual** (Python TUI framework) with typed async events (`BaseEvent
 
 **We hook directly into Vibe's event system** — no terminal emulation, no tmux, no PTY bridging. This gives us typed, structured data on the mobile client instead of terminal scraping.
 
-**Deployment on EC2** eliminates the tunneling layer entirely:
+**The user runs `vibecheck-vibe` instead of `vibe`.** Same Textual TUI, same AgentLoop, but with vibecheck's WebSocket bridge running alongside. Terminal and phone are parallel surfaces into the same session:
 ```
-Phone → HTTPS → EC2 (Caddy + vibecheck bridge + Vibe)
+Terminal (Textual TUI) ──┐
+                         ├── vibecheck-vibe ── AgentLoop ── Mistral API
+Phone (PWA) ─────────────┘
+         ↕ HTTPS/WSS
+EC2 (Caddy → :7870)
 ```
 No SSH tunnels, no Cloudflare, no Tailscale. Caddy handles TLS termination (Let's Encrypt) and WebSocket upgrade.
 
@@ -94,7 +98,36 @@ The bridge is designed multi-session from the start. All state is keyed by `sess
   - `GET /api/state` — fleet summary (N running, N waiting, N idle)
 - [ ] Event broadcasting scoped to session subscribers
 
-> **Fallback:** If in-process `AgentLoop` hooks don't work as expected, fall back to Option B (sidecar process: launch Vibe in tmux, watch `~/.vibe/logs/session/` JSONL, detect waiting states from terminal output). See README.md § "Option B: Sidecar Process".
+> **Fallback:** If in-process `AgentLoop` hooks don't work as expected, fall back to tmux/PTY sidecar (terminal scraping). See `docs/ANALYSIS-session-attachment.md` for full option analysis.
+
+### Layer 1.5 — Live Attach (Vibe TUI + Mobile Bridge)
+
+> *Demo: "Run vibecheck-vibe in terminal, open phone, see same events, approve from either surface"*
+
+The core product promise: run Vibe in your terminal, walk away, control it from your phone. This requires the terminal TUI and mobile PWA to share the **same** AgentLoop in the **same** process. See `docs/ANALYSIS-session-attachment.md` for why this can't be done cross-process (Vibe has no IPC).
+
+**Architecture:**
+```
+Terminal (Textual TUI) ──┐
+                         ├── vibecheck-vibe process ── AgentLoop ── Mistral API
+Phone (PWA via WSS) ─────┘
+```
+
+- [ ] `vibecheck-vibe` CLI wrapper replaces `vibe` command
+  - Creates AgentLoop using Vibe's libraries (same as `vibe` CLI)
+  - Creates SessionBridge with `attach_to_loop()` — wires callbacks on the existing loop
+  - Starts vibecheck FastAPI/WebSocket server on :7870 (uvicorn as Textual worker, same asyncio loop)
+  - Launches Vibe's Textual TUI (`VibeCheckApp` subclass of `VibeApp`)
+- [ ] Bridge owns AgentLoop — single consumer of `act()` generator
+  - Event tee: fan out events to both TUI renderer and WebSocket broadcast
+  - Dual input: terminal keyboard and phone REST both go through `bridge.inject_message()`
+  - Serialized through bridge's `_message_queue` / `_message_worker`
+- [ ] Session API exposes `attach_mode: "live"` so frontend knows full control is available
+- [ ] Approval callback routes to mobile via WebSocket; TUI shows waiting indicator
+  - Mobile is the primary approval surface for the hackathon MVP
+  - TUI keyboard approve/deny is a stretch enhancement
+
+> **Fallback:** If VibeApp subclassing proves unworkable, fall back to tmux/PTY sidecar (Option C in `docs/ANALYSIS-session-attachment.md`). Brittle but demoable.
 
 ### Layer 2 — Mobile PWA Chat
 
@@ -260,11 +293,12 @@ Two tracks organized by **what can be built independently**, not by person. Eith
 Owns: Vibe integration, FastAPI server, WebSocket event system, all `/api/*` endpoints, Mistral API integrations (Voxtral, Ministral, translation), EC2 infra.
 
 ```
-L0:  Scaffold vibecheck/ package, FastAPI app, PSK auth
-     EC2 provisioning, Caddy + Let's Encrypt, Vibe on EC2
-L1:  SessionManager + SessionBridge, session discovery (~/.vibe/logs/session/),
-     WS /ws/events/{session_id}, session-scoped REST endpoints, fleet state
-L2:  Session-scoped event broadcasting, session switcher data
+L0:    Scaffold vibecheck/ package, FastAPI app, PSK auth
+       EC2 provisioning, Caddy + Let's Encrypt, Vibe on EC2
+L1:    SessionManager + SessionBridge, session discovery (~/.vibe/logs/session/),
+       WS /ws/events/{session_id}, session-scoped REST endpoints, fleet state
+L1.5:  attach_to_loop(), event tee, VibeCheckApp subclass, vibecheck-vibe launcher
+L2:    Session-scoped event broadcasting, session switcher data
 L3:  POST /api/voice/transcribe (Voxtral batch proxy)
 L4a: VAPID + pywebpush, push on approval/input/error (includes session_id)
 L4b: Ministral copy/urgency/summaries, IntensityManager, snooze
@@ -303,6 +337,7 @@ Layer   Track A (Backend)                    Track B (Frontend)              Par
 ─────   ─────────────────                    ──────────────────              ─────────
 L0      FastAPI + EC2 + Caddy                Svelte scaffold + PWA shell    ✅ fully
 L1      WS + callbacks + REST                Static mockup + panel design   ✅ fully
+L1.5    attach_to_loop + launcher            (backend-only)                 ⚠️ backend
                 ╔═══════════════════════════════════════════╗
                 ║  INTEGRATION #1 — connect A↔B, test E2E  ║
                 ╚═══════════════════════════════════════════╝
@@ -315,7 +350,7 @@ L6      Session/diff APIs                    Settings + theme + diff view   ✅ 
 L7+     Stretch backend                      Stretch frontend               ✅ fully
 ```
 
-> **Note:** After L2, layers L3/L4a/L4b/L5/L6 are independent branches — the team can tackle them in any order or split across them freely.
+> **Note:** L1.5 is a backend-only layer (no frontend changes). After L1.5 + L2, layers L3/L4a/L4b/L5/L6 are independent branches — the team can tackle them in any order or split across them freely.
 
 ---
 
@@ -358,7 +393,9 @@ L0 Foundation ──────────────────────
   │
   ├── L1 Core Bridge ──────────────────────────────────────────────────
   │     │
-  │     ├── L2 Mobile PWA Chat ────────────────────────────────────────
+  │     ├── L1.5 Live Attach (TUI + Mobile Bridge) ────────────────────
+  │     │     │
+  │     │     ├── L2 Mobile PWA Chat ──────────────────────────────────
   │     │     │
   │     │     ├── L3 Voice Input ──────────────────────────────────────
   │     │     │     │
@@ -377,7 +414,7 @@ L0 Foundation ──────────────────────
   │     │           └── L9 Smart Autonomy & Showmanship (stretch) ─────
 ```
 
-Note: L3, L4a, L5, L6 are **independent of each other** — they all branch from L2. L4b depends on L4a. After L2 is working, the team can split across these features in any order.
+Note: L1.5 is a prerequisite for all higher layers (it provides the live attach capability). L3, L4a, L5, L6 are **independent of each other** — they all branch from L1.5/L2. L4b depends on L4a. After L1.5 + L2 are working, the team can split across these features in any order.
 
 ---
 
@@ -433,7 +470,7 @@ Note: L3, L4a, L5, L6 are **independent of each other** — they all branch from
 | Tunnel approach? | **None needed.** Vibe runs on EC2, Caddy handles HTTPS. |
 | PWA vs native app for notifications? | **PWA.** Web Push works on Android (full) and iOS 16.4+ (requires Add to Home Screen). |
 | Voxtral API vs self-hosted? | **API** for hackathon ($0.003-0.006/min is cheap). Self-hosted is stretch if GPU available. |
-| In-process vs sidecar? | **In-process** (Option A). Cleaner, typed events, no parsing terminal output. |
+| In-process vs sidecar? | **In-process sidecar injection** (Option B). `vibecheck-vibe` wraps Vibe's CLI — same process runs TUI + WebSocket bridge. Typed events, shared AgentLoop, no terminal scraping. See `docs/ANALYSIS-session-attachment.md`. |
 | JA-native prompting vs translation overlay? | **Both.** Support JA input natively AND provide translation as fallback for EN-only content. |
 | Voxtral fine-tuning? | **Excluded.** No public training code for Realtime architecture. |
 | Demo approach? | **Split-screen** (Vibe terminal + phone mirror via scrcpy) + QR audience participation. See DEMO.md. |

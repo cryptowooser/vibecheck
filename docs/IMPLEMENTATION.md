@@ -16,11 +16,12 @@
 - [Phase 0: Scaffolds](#phase-0-scaffolds)
 - [Phase 1: Prototypes](#phase-1-prototypes-standalone-fe-components)
 - [Phase 2: Backend Core (L0–L1)](#phase-2-backend-core-l0l1)
-- [Phase 3: Frontend Core (L2)](#phase-3-frontend-core-l2)
-- [Phase 4: Integration #1](#phase-4-integration-1--first-live-mobile-demo)
-- [Phase 5: Feature Branches (L3–L5)](#phase-5-feature-branches-l3l5-parallel)
-- [Phase 6: Polish (L6)](#phase-6-polish-l6)
-- [Phase 7: Stretch (L7–L9)](#phase-7-stretch-l7l9)
+- [Phase 3: Live Attach (L1.5)](#phase-3-live-attach-l15)
+- [Phase 4: Frontend Core (L2)](#phase-4-frontend-core-l2)
+- [Phase 5: Integration #1](#phase-5-integration-1--first-live-mobile-demo)
+- [Phase 6: Feature Branches (L3–L5)](#phase-6-feature-branches-l3l5-parallel)
+- [Phase 7: Polish (L6)](#phase-7-polish-l6)
+- [Phase 8: Stretch (L7–L9)](#phase-8-stretch-l7l9)
 - [Deployment Checklist](#deployment-checklist)
 
 ---
@@ -36,13 +37,21 @@
                              ▼
                     ┌──────────────────┐
                     │   Phase 2        │
-                    │ Backend Core     │──────────────┐
-                    │ (bridge, events, │              │
-                    │  WS, REST)       │              │
+                    │ Backend Core     │
+                    │ (bridge, events, │
+                    │  WS, REST)       │
+                    └────────┬─────────┘
+                             │
+                             ▼
+                    ┌──────────────────┐
+                    │   Phase 3        │
+                    │ Live Attach      │──────────────┐
+                    │ (TUI + Mobile    │              │
+                    │  Bridge, L1.5)   │              │
                     └────────┬─────────┘              │
                              │                        │
 ┌──────────────────┐         │         ┌──────────────┴───┐
-│   Phase 0B       │         │         │   Phase 4        │
+│   Phase 0B       │         │         │   Phase 5        │
 │ Frontend Scaffold│─────────┼────────▶│ Integration #1   │◀── GATE
 └──────────────────┘         │         │ (first live demo)│
                              │         └──────┬───────────┘
@@ -51,13 +60,13 @@
 │ All 6 Prototypes │─────────┘     │          │          │             │
 │ (independent)    │               ▼          ▼          ▼             │
 └──────────────────┘        ┌──────────┐ ┌────────┐ ┌────────┐        │
-                            │ Phase 5A │ │Phs 5B  │ │Phs 5D  │        │
+                            │ Phase 6A │ │Phs 6B  │ │Phs 6D  │        │
                             │ Voice L3 │ │Push L4a│ │Trans L5│        │
                             └──────────┘ └───┬────┘ └────────┘        │
                                              │                        │
                                              ▼                        ▼
                                        ┌──────────┐           ┌──────────┐
-                                       │ Phase 5C │           │ Phase 6  │
+                                       │ Phase 6C │           │ Phase 7  │
                                        │Smart L4b │           │ Polish   │
                                        └──────────┘           └──────────┘
 ```
@@ -69,12 +78,13 @@
 | Phase 0A and 0B are **fully parallel** | No dependencies between backend and frontend scaffolds |
 | Phase 1 prototypes are **all independent** | Any prototype can be built by any agent at any time — no deps on scaffolds or each other |
 | Phase 2 **requires** Phase 0A | Backend core builds on the scaffold |
-| Phase 3 **requires** Phase 0B | Frontend core builds on the scaffold; reuses Proto 1 (WS reconnect) code |
-| Phase 4 **requires** Phase 2 + Phase 3 | This is the critical gate — both halves must work |
-| Phase 5A/5B/5D are **fully parallel** | Voice, Push, Translation are independent feature branches |
-| Phase 5C **requires** Phase 5B | Smart notifications build on push infrastructure |
-| Phase 6 **requires** Phase 4 | Polish is post-integration |
-| Prototypes **feed into** later phases | Proto 1→Phase 3, Proto 2→Phase 5A, Proto 3→Phase 5B, Proto 4→Phase 7/L8, Proto 8→Phase 7/L7 |
+| Phase 3 **requires** Phase 2 | Live attach builds on bridge + events + WS infrastructure |
+| Phase 4 **requires** Phase 0B | Frontend core builds on the scaffold; reuses Proto 1 (WS reconnect) code |
+| Phase 5 **requires** Phase 3 + Phase 4 | This is the critical gate — backend (with live attach) + frontend must work |
+| Phase 6A/6B/6D are **fully parallel** | Voice, Push, Translation are independent feature branches |
+| Phase 6C **requires** Phase 6B | Smart notifications build on push infrastructure |
+| Phase 7 **requires** Phase 5 | Polish is post-integration |
+| Prototypes **feed into** later phases | Proto 1→Phase 4, Proto 2→Phase 6A, Proto 3→Phase 6B, Proto 4→Phase 8/L8, Proto 8→Phase 8/L7 |
 
 ---
 
@@ -96,18 +106,22 @@ Each work unit (WU) is a self-contained task that one agent can complete indepen
 | WU-10 | 2 | WebSocket manager | WU-01, WU-09 | WU-11 | M |
 | WU-11 | 2 | REST endpoints (stub → real) | WU-01, WU-09 | WU-10 | M |
 | WU-12 | 2 | Vibe bridge (AgentLoop hooks) | WU-09, WU-10, WU-11 | — | L |
-| WU-13 | 3 | FE WebSocket client + stores | WU-02, WU-03 | WU-14, WU-15 | M |
-| WU-14 | 3 | FE chat components | WU-02 | WU-13, WU-15 | M |
-| WU-15 | 3 | FE approval panel + input bar | WU-02 | WU-13, WU-14 | M |
-| WU-16 | 4 | Integration: static build + E2E | WU-10–15 | — | M |
-| WU-17 | 5A | Voice: backend transcribe endpoint | WU-16 | WU-19, WU-21 | S |
-| WU-18 | 5A | Voice: FE mic button | WU-16, WU-04 | WU-19, WU-21 | M |
-| WU-19 | 5B | Push: backend VAPID + pywebpush | WU-16 | WU-17, WU-21 | M |
-| WU-20 | 5B | Push: FE service worker + subscribe | WU-16, WU-05 | WU-17, WU-21 | M |
-| WU-21 | 5D | Translation: backend + FE | WU-16 | WU-17, WU-19 | M |
-| WU-22 | 5C | Smart notifications (Ministral) | WU-19 | WU-21 | M |
-| WU-23 | 6 | Polish: FE settings, theme, diff viewer | WU-16, WU-24 | — | L |
-| WU-24 | 6 | Polish: BE session resume + diff endpoints | WU-12 | WU-23 | M |
+| WU-25 | 3 | Bridge `attach_to_loop()` | WU-12 | WU-26 | S |
+| WU-26 | 3 | Event tee + TUI bridge rendering | WU-25 | — | M |
+| WU-27 | 3 | VibeCheckApp + launcher | WU-25, WU-26 | — | M |
+| WU-28 | 3 | Live attach integration test | WU-27 | — | S |
+| WU-13 | 4 | FE WebSocket client + stores | WU-02, WU-03 | WU-14, WU-15 | M |
+| WU-14 | 4 | FE chat components | WU-02 | WU-13, WU-15 | M |
+| WU-15 | 4 | FE approval panel + input bar | WU-02 | WU-13, WU-14 | M |
+| WU-16 | 5 | Integration: static build + E2E | WU-13–15, WU-28 | — | M |
+| WU-17 | 6A | Voice: backend transcribe endpoint | WU-16 | WU-19, WU-21 | S |
+| WU-18 | 6A | Voice: FE mic button | WU-16, WU-04 | WU-19, WU-21 | M |
+| WU-19 | 6B | Push: backend VAPID + pywebpush | WU-16 | WU-17, WU-21 | M |
+| WU-20 | 6B | Push: FE service worker + subscribe | WU-16, WU-05 | WU-17, WU-21 | M |
+| WU-21 | 6D | Translation: backend + FE | WU-16 | WU-17, WU-19 | M |
+| WU-22 | 6C | Smart notifications (Ministral) | WU-19 | WU-21 | M |
+| WU-23 | 7 | Polish: FE settings, theme, diff viewer | WU-16, WU-24 | — | L |
+| WU-24 | 7 | Polish: BE session resume + diff endpoints | WU-12 | WU-23 | M |
 
 **Scope:** S = small (< 1 hour), M = medium (1–3 hours), L = large (3+ hours)
 
@@ -117,8 +131,9 @@ Each work unit (WU) is a self-contained task that one agent can complete indepen
 |--------|-------------------------------------|
 | Start | WU-01 + WU-02 + WU-03 through WU-08 = **up to 8 parallel** |
 | After Phase 0A done | WU-09, WU-10, WU-11 (+ any remaining prototypes) = **3–6 parallel** |
-| After Phase 2 done | WU-13 + WU-14 + WU-15 = **3 parallel** |
-| After Phase 4 gate | WU-17 + WU-18 + WU-19 + WU-20 + WU-21 + WU-24 = **6 parallel** |
+| After Phase 2 done | WU-25, WU-26 (live attach) + FE WUs if Phase 0B done = **2–5 parallel** |
+| After Phase 3 done | WU-13 + WU-14 + WU-15 = **3 parallel** (frontend core) |
+| After Phase 5 gate | WU-17 + WU-18 + WU-19 + WU-20 + WU-21 + WU-24 = **6 parallel** |
 
 ---
 
@@ -158,6 +173,9 @@ vibecheck/tests/
 ├── test_api.py              # REST endpoint tests
 ├── test_ws.py               # WebSocket tests
 ├── test_bridge.py           # AgentLoop integration tests (mocked)
+├── test_tui_bridge.py       # TUI bridge adapter tests
+├── test_launcher.py         # vibecheck-vibe launcher tests
+├── test_live_attach.py      # Live attach integration tests
 ├── test_voice.py            # Voxtral transcription proxy tests
 ├── test_tts.py              # ElevenLabs TTS proxy tests
 ├── test_translate.py        # Translation endpoint tests
@@ -275,6 +293,8 @@ vibecheck/
 ├── bridge.py                # AgentLoop integration + callbacks
 ├── events.py                # Event types (Pydantic models)
 ├── ws.py                    # WebSocket manager (broadcast)
+├── tui_bridge.py            # Adapter: bridge events → Textual TUI rendering
+├── launcher.py              # vibecheck-vibe entry point (TUI + WebSocket in same process)
 ├── routes/
 │   ├── api.py               # REST endpoints
 │   ├── voice.py             # POST /api/voice/transcribe
@@ -777,9 +797,134 @@ uv run pytest vibecheck/tests/test_bridge.py -v
 
 ---
 
-## Phase 3: Frontend Core (L2)
+## Phase 3: Live Attach (L1.5)
+
+> **Parallelism:** WU-25 first, then WU-26 (can start slightly parallel with WU-25), then WU-27 (needs both), then WU-28 (integration test).
+> **Fallback:** If VibeApp subclassing proves unworkable, fall back to tmux/PTY sidecar (Option C in `docs/ANALYSIS-session-attachment.md`).
+
+This phase implements the core product promise: run Vibe in your terminal, walk away, control it from your phone. The terminal TUI and mobile PWA share the **same** AgentLoop in the **same** process. See `docs/ANALYSIS-session-attachment.md` for the full architecture decision.
+
+### WU-25: Bridge `attach_to_loop()` (Phase 3)
+
+**Depends on:** WU-12 (complete)
+**Parallel with:** WU-26 (can start once interface is defined)
+
+- [ ] **`SessionBridge.attach_to_loop(agent_loop, vibe_runtime)`** — wire callbacks on an **existing** AgentLoop
+  - Calls `agent_loop.set_approval_callback()` with bridge's approval handler
+  - Calls `agent_loop.set_user_input_callback()` with bridge's input handler
+  - Sets `message_observer` on the loop for event capture
+  - Does NOT create a new AgentLoop (unlike `_ensure_agent_loop()`)
+  - Sets `self.attach_mode = "live"`
+- [ ] **`attach_mode` field** on SessionBridge: `"live" | "replay" | "observe_only" | "managed"`
+  - Default: `"managed"` (current behavior — bridge creates its own loop)
+  - `"live"`: bridge attached to externally-created loop (via `attach_to_loop()`)
+- [ ] **Update `state_payload()`** and **`SessionManager.session_detail()`** to include `attach_mode`
+- [ ] **Update `_run_agent_turn()`** to work when bridge doesn't own the `act()` call
+  - In `"live"` mode, events come via the observer/tee instead of iterating `act()` directly
+  - The TUI drives `act()` initially; bridge intercepts via callbacks and tees events
+- [ ] **`vibecheck/tests/test_bridge.py`** additions:
+  - Test: `attach_to_loop()` wires callbacks on FakeAgentLoop
+  - Test: `attach_mode` appears in `state_payload()` as `"live"`
+  - Test: approval/input callbacks work the same as managed mode
+  - Test: `attach_mode` defaults to `"managed"` for existing behavior
+
+**Verify:**
+```bash
+uv run pytest vibecheck/tests/test_bridge.py -v
+```
+
+### WU-26: Event Tee + TUI Bridge Rendering (Phase 3)
+
+**Depends on:** WU-25
+**Files:** `vibecheck/tui_bridge.py` (new), `vibecheck/tests/test_tui_bridge.py` (new)
+
+- [ ] **`TuiBridge`** adapter that connects SessionBridge events to Textual's event handler
+  - `on_bridge_event(event)` → calls Textual `event_handler.handle_event()`
+  - Runs in the same asyncio loop as Textual (no threading needed)
+- [ ] **Event tee**: when bridge processes `act()` events, fan out to both:
+  - WebSocket broadcast (existing)
+  - TUI renderer (new, via `TuiBridge`)
+- [ ] **Override mechanism** for `_handle_agent_loop_turn`:
+  - Bridge drives `act()` instead of TUI
+  - TUI input (`on_chat_input_container_submitted`) posts to `bridge.inject_message()`
+  - Bridge's `_message_worker` calls `act()` and broadcasts events
+  - TUI receives events via the tee callback and renders them
+- [ ] **Approval UI in TUI**: when bridge enters `waiting_approval`, TUI shows indicator
+  - Mobile is the primary approval surface; TUI shows "waiting for mobile approval" status
+  - TUI keyboard approve/deny is a stretch enhancement
+- [ ] **`vibecheck/tests/test_tui_bridge.py`**:
+  - Mock TUI event handler, verify events reach it
+  - Verify events reach both TUI and WebSocket consumers
+  - Verify approval state indicator triggers on bridge state change
+
+**Verify:**
+```bash
+uv run pytest vibecheck/tests/test_tui_bridge.py -v
+```
+
+### WU-27: VibeCheckApp + Launcher (Phase 3)
+
+**Depends on:** WU-25, WU-26
+**Files:** `vibecheck/launcher.py` (new), `vibecheck/tests/test_launcher.py` (new), `pyproject.toml`
+
+- [ ] **`VibeCheckApp(VibeApp)`** Textual subclass:
+  - Constructor takes `bridge: SessionBridge` + `ws_port: int`
+  - `on_mount()`: override to NOT set TUI's own callbacks (bridge already owns them)
+  - Start uvicorn as Textual worker (`self.run_worker(self._run_server())`)
+  - Route keyboard input to `bridge.inject_message()`
+  - Register bridge event callback for TUI rendering via `TuiBridge`
+- [ ] **`launch()`** entry point function:
+  - Parse CLI args (reuse Vibe's argparse + add `--ws-port`)
+  - Load VibeConfig, create AgentLoop
+  - Create SessionBridge, call `attach_to_loop()`
+  - Create vibecheck FastAPI app, configure it with the bridge's session_manager
+  - Create VibeCheckApp, pass bridge + agent_loop
+  - `app.run()` — starts Textual TUI + uvicorn in same asyncio loop
+- [ ] **`[project.scripts]`** entry in `pyproject.toml`: `vibecheck-vibe = "vibecheck.launcher:launch"`
+- [ ] **Uvicorn config**: `log_level="warning"` to avoid terminal output interleaving with TUI
+- [ ] **`vibecheck/tests/test_launcher.py`**:
+  - Verify launcher creates components correctly (bridge, app, uvicorn config)
+  - Verify `vibecheck-vibe` entry point is registered
+
+**Verify:**
+```bash
+uv run pytest vibecheck/tests/test_launcher.py -v
+# Manual: vibecheck-vibe starts, Textual TUI visible, curl localhost:7870/api/health returns ok
+```
+
+### WU-28: Live Attach Integration Test (Phase 3)
+
+**Depends on:** WU-27
+**Files:** `vibecheck/tests/test_live_attach.py` (new), `scripts/test_live_attach.sh` (new)
+
+- [ ] **Integration test** (mocked AgentLoop, real FastAPI server, simulated TUI):
+  - Start launcher with FakeAgentLoop
+  - Connect WebSocket client
+  - Send message via REST → verify events appear on WebSocket
+  - Trigger approval → verify pending state on REST API
+  - Approve via REST → verify AgentLoop proceeds
+  - Verify `attach_mode: "live"` in session detail response
+- [ ] **Shell script smoke test** (`scripts/test_live_attach.sh`):
+  - Start `vibecheck-vibe` with a test config
+  - curl health endpoint on :7870
+  - websocat connects and receives events
+  - Verify Textual TUI process is running (check PID)
+- [ ] **Acceptance test** matches the product promise:
+  > Terminal shows Vibe TUI. Phone shows vibecheck PWA. Pending approval visible on both surfaces.
+  > Approve from phone → terminal shows tool proceeding. Phone shows tool result.
+
+**Verify:**
+```bash
+uv run pytest vibecheck/tests/test_live_attach.py -v
+scripts/test_live_attach.sh
+```
+
+---
+
+## Phase 4: Frontend Core (L2)
 
 > **Parallelism:** WU-13, WU-14, WU-15 can all start in parallel once WU-02 is done. WU-13 reuses code from Proto WU-03.
+> **Note:** Frontend development can proceed in parallel with Phase 3 (Live Attach) since it depends only on the scaffold + prototypes.
 
 ### WU-13: FE WebSocket Client + Stores
 
@@ -867,10 +1012,10 @@ npm run build
 
 ---
 
-## Phase 4: Integration #1 — First Live Mobile Demo
+## Phase 5: Integration #1 — First Live Mobile Demo
 
 > **GATE:** This is the critical convergence point. All subsequent work depends on this.
-> **Depends on:** WU-10, WU-11, WU-12 (backend core) + WU-13, WU-14, WU-15 (frontend core)
+> **Depends on:** WU-12 (backend core) + WU-25–28 (live attach) + WU-13–15 (frontend core)
 
 ### WU-16: Integration + E2E Verification
 
@@ -906,9 +1051,9 @@ scripts/smoke_test.sh https://vibecheck.shisa.ai  # remote smoke test
 
 ---
 
-## Phase 5: Feature Branches (L3–L5, parallel)
+## Phase 6: Feature Branches (L3–L5, parallel)
 
-> **Parallelism:** After Integration #1, 5A, 5B, and 5D are fully independent. Assign to 3 separate agents. 5C depends on 5B.
+> **Parallelism:** After Integration #1, 6A, 6B, and 6D are fully independent. Assign to 3 separate agents. 6C depends on 6B.
 
 ### WU-17 + WU-18: Voice Input (L3)
 
@@ -1024,7 +1169,7 @@ uv run pytest vibecheck/tests/ -k "ministral or intensity" -v
 
 ---
 
-## Phase 6: Polish (L6)
+## Phase 7: Polish (L6)
 
 **Depends on:** WU-16 (integration gate); WU-24 must land before WU-23 can wire up diff UI.
 
@@ -1067,7 +1212,7 @@ uv run pytest vibecheck/tests/test_sessions.py -v
 
 ---
 
-## Phase 7: Stretch (L7–L9)
+## Phase 8: Stretch (L7–L9)
 
 Stretch goals — implement if time allows. L7 (ElevenLabs TTS) is highest priority stretch because it targets the **Best Voice Use Case** prize ($2K-6K credits).
 
@@ -1075,10 +1220,10 @@ Stretch goals — implement if time allows. L7 (ElevenLabs TTS) is highest prior
 
 > **Execution units (stretch):** These WUs activate only after Phase 4 gate is stable.
 
-#### WU-25: L7 Backend — ElevenLabs TTS Proxy
+#### WU-29: L7 Backend — ElevenLabs TTS Proxy
 
 **Depends on:** WU-16, WU-08 (proto validation)
-**Parallel with:** WU-26, WU-27
+**Parallel with:** WU-30, WU-31
 
 - [ ] **`POST /api/tts`** (`routes/tts.py`)
   - Accept `{text, language?, voice_id?}` → stream ElevenLabs response as `audio/mpeg`
@@ -1096,10 +1241,10 @@ Stretch goals — implement if time allows. L7 (ElevenLabs TTS) is highest prior
 uv run pytest vibecheck/tests/test_tts.py -v
 ```
 
-#### WU-26: L7 Frontend — TTS Playback + Auto-Read
+#### WU-30: L7 Frontend — TTS Playback + Auto-Read
 
-**Depends on:** WU-16, WU-25
-**Parallel with:** WU-27
+**Depends on:** WU-16, WU-29
+**Parallel with:** WU-31
 
 - [ ] Frontend TTS playback (`AudioContext` or `<audio>`)
   - On `AssistantEvent`: if auto-read enabled, fetch `/api/tts` → play audio
@@ -1115,9 +1260,9 @@ cd vibecheck/frontend && npm run build
 # Manual: enable auto-read → trigger AssistantEvent → hear playback; force TTS failure → fallback speaks
 ```
 
-#### WU-27: L7 Voice Loop — Walkie-Talkie + Realtime STT
+#### WU-31: L7 Voice Loop — Walkie-Talkie + Realtime STT
 
-**Depends on:** WU-17, WU-18, WU-25, WU-26
+**Depends on:** WU-17, WU-18, WU-29, WU-30
 **Parallel with:** none (integration-heavy)
 
 - [ ] Full voice loop UX:
