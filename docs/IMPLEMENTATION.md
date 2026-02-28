@@ -132,7 +132,6 @@ Each work unit (WU) is a self-contained task that one agent can complete indepen
 | WU-32 | 3.1 | TUI approval/question UI cleanup on remote resolve | WU-28 | WU-33, WU-13–15 | M |
 | WU-33 | 3.1 | Remote injection UX + lifecycle parity audit | WU-28 | WU-32, WU-13–15 | S |
 | WU-34 | 3.1 | Manual validation with real Vibe | WU-32, WU-33 | — | S |
-| WU-35 | 3.1 | Gap 2: phone prompts visible in TUI (stretch) | WU-32 | — | M |
 | WU-13 | 4 | FE WebSocket client + stores | WU-02, WU-03 | WU-14, WU-15 | M |
 | WU-14 | 4 | FE chat components | WU-02 | WU-13, WU-15 | M |
 | WU-15 | 4 | FE approval panel + input bar | WU-02 | WU-13, WU-14 | M |
@@ -145,6 +144,7 @@ Each work unit (WU) is a self-contained task that one agent can complete indepen
 | WU-22 | 6C | Smart notifications (Ministral) | WU-19 | WU-21 | M |
 | WU-23 | 7 | Polish: FE settings, theme, diff viewer | WU-16, WU-24 | — | L |
 | WU-24 | 7 | Polish: BE session resume + diff endpoints | WU-12 | WU-23 | M |
+| WU-35 | 7 | Gap 2: phone prompts visible in TUI (stretch) | WU-24 | — | M |
 
 **Scope:** S = small (< 1 hour), M = medium (1–3 hours), L = large (3+ hours)
 
@@ -1052,36 +1052,6 @@ Run the full acceptance test against a real Vibe installation. This is the test 
 # Log artifact locations or summary outputs in WORKLOG.md
 ```
 
-### WU-35: Gap 2 — Phone Prompts Visible in TUI (Phase 3.1 Stretch)
-
-**Depends on:** WU-32
-**Parallel with:** WU-13–15 (Phase 4)
-**Design doc:** [`docs/PLAN-gap2.md`](./PLAN-gap2.md)
-
-Stretch goal. Makes phone-injected user messages render as user bubbles in the Vibe TUI, eliminating the "ghost conversation" known limitation.
-
-- [ ] Add mount callback (`mount_user_message`) from `VibeCheckApp` to `TuiBridge`
-- [ ] `TuiBridge`: on raw `UserMessageEvent`, dispatch first (preserves `finalize_streaming()`), then mount user bubble via callback
-- [ ] FIFO one-shot dedupe queue (`maxlen=32`) on `TuiBridge` — local prompts marked by `_handle_agent_loop_turn()` are skipped, remote prompts mount
-- [ ] Mark the **rendered** prompt (after `_render_path_prompt()`), not raw input
-- [ ] Rollback mark immediately if `inject_message()` returns `False`; debug-log on rollback
-- [ ] Update `README.md` — remove Gap 2 known limitation
-- [ ] Update `scripts/manual-test/manual-test.howto.md` — S6 becomes strict pass
-- [ ] **Tests:**
-  - TuiBridge mounts user bubble for unmarked `UserMessageEvent`
-  - TuiBridge skips mount for locally marked prompt
-  - `_handle_agent_loop_turn()` marks prompt before inject
-  - Graceful no-op when mount callback is `None`
-  - Mark rollback on inject failure — next remote event is not swallowed
-
-**Pre-implementation:** Verify Vibe widget API per checklist in `docs/PLAN-gap2.md`.
-
-**Verify:**
-```bash
-uv run pytest vibecheck/tests/test_tui_bridge.py vibecheck/tests/test_launcher.py -v
-# Manual: S6 scenario strict pass (phone prompt visible as TUI user bubble)
-```
-
 ---
 
 ## Phase 4: Frontend Core (L2)
@@ -1374,6 +1344,36 @@ uv run pytest vibecheck/tests/test_sessions.py -v
 - [ ] **Error states** — friendly messages, retry buttons
 - [ ] **Loading states** — skeletons, spinners
 - [ ] **Haptic feedback** — `navigator.vibrate(200)` on approval request
+
+### WU-35: Gap 2 — Phone Prompts Visible in TUI (Stretch)
+
+**Depends on:** WU-24
+**Parallel with:** WU-23
+**Design doc:** [`docs/PLAN-gap2.md`](./PLAN-gap2.md)
+
+Stretch goal. Makes phone-injected user messages render as user bubbles in the Vibe TUI, eliminating the "ghost conversation" known limitation.
+
+- [ ] Add mount callback (`mount_user_message`) from `VibeCheckApp` to `TuiBridge`
+- [ ] `TuiBridge`: on raw `UserMessageEvent`, dispatch first (preserves `finalize_streaming()`), then mount user bubble via callback
+- [ ] FIFO one-shot dedupe queue (`maxlen=32`) on `TuiBridge` — local prompts marked by `_handle_agent_loop_turn()` are skipped, remote prompts mount
+- [ ] Mark the **rendered** prompt (after `_render_path_prompt()`), not raw input
+- [ ] Rollback mark immediately if `inject_message()` returns `False`; debug-log on rollback
+- [ ] Update `README.md` — remove Gap 2 known limitation
+- [ ] Update `scripts/manual-test/manual-test.howto.md` — S6 becomes strict pass
+- [ ] **Tests:**
+  - TuiBridge mounts user bubble for unmarked `UserMessageEvent`
+  - TuiBridge skips mount for locally marked prompt
+  - `_handle_agent_loop_turn()` marks prompt before inject
+  - Graceful no-op when mount callback is `None`
+  - Mark rollback on inject failure — next remote event is not swallowed
+
+**Pre-implementation:** Verify Vibe widget API per checklist in `docs/PLAN-gap2.md`.
+
+**Verify:**
+```bash
+uv run pytest vibecheck/tests/test_tui_bridge.py vibecheck/tests/test_launcher.py -v
+# Manual: S6 scenario strict pass (phone prompt visible as TUI user bubble)
+```
 
 ---
 

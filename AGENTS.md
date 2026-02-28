@@ -239,7 +239,7 @@ WU-03: proto websocket-reconnect
 
 ## Work Units
 
-See `docs/IMPLEMENTATION.md` for the full punchlist with dependency graph, parallelism map, and verification steps for each work unit (WU-01 through WU-34).
+See `docs/IMPLEMENTATION.md` for the full punchlist with dependency graph, parallelism map, and verification steps for each work unit (WU-01 through WU-35).
 
 **Before starting a WU:**
 1. Read its entry in IMPLEMENTATION.md

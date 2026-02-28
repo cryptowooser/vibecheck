@@ -139,9 +139,9 @@ Phone (PWA via WSS) ─────┘
 
 Phase 3 (WU-25–28) proved the bridge mechanics: callback ownership, event tee, dual-surface resolution (60 tests). **Phase 3.1** (WU-32–34) addresses three TUI integration gaps that only manifest with the real Vibe Textual app:
 
-1. **TUI stuck in approval UI after mobile resolves (High):** Settle resolves the asyncio Future but doesn't trigger Vibe's Textual UI cleanup (`on_approval_app_*` handlers). Must fix before demo.
-2. **Mobile-injected prompts invisible in terminal (Medium):** Vibe's EventHandler ignores `UserMessageEvent` by design. Accept and document for hackathon.
-3. **`_handle_agent_loop_turn` bypass drops loading widget + interrupt (Medium):** Document; loading widget is nice-to-have.
+1. **TUI stuck in approval UI after mobile resolves (High):** Settle resolves the asyncio Future but doesn't trigger Vibe's Textual UI cleanup (`on_approval_app_*` handlers). Must fix before demo. **Fixed in WU-32.**
+2. **Mobile-injected prompts invisible in terminal (Medium):** Vibe's EventHandler ignores `UserMessageEvent` by design. Documented as known limitation for now; fix planned as WU-35 (Phase 7 stretch). See [`docs/PLAN-gap2.md`](./PLAN-gap2.md).
+3. **`_handle_agent_loop_turn` bypass drops loading widget + interrupt (Medium):** Documented in WU-33; loading widget is nice-to-have.
 
 See `docs/ANALYSIS-session-attachment.md` § "Phase 3 Validation: Confirmed Gaps" for full technical detail.
 
