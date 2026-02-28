@@ -59,3 +59,7 @@ cd frontend-prototype/frontend && npm run test:secrets
 Run physical-device checks for Milestone 5 using:
 
 - `frontend-prototype/MOBILE-QA-CHECKLIST.md`
+
+## Recommended Voice for Japanese
+
+Otani
