@@ -138,7 +138,7 @@ Mobile REST      → POST /api/sessions/{id}/message   → bridge.inject_message
 
 AgentLoop calls the approval callback (bridge's). Bridge creates a pending approval, broadcasts to mobile via WebSocket, shows an indicator in the TUI. Mobile approves via REST → bridge resolves the Future → AgentLoop proceeds → both TUI and mobile update.
 
-For the hackathon MVP, mobile is the only approval surface. TUI keyboard shortcuts for approve/deny are a stretch enhancement.
+Both TUI and mobile can resolve approvals — first response wins. This is required for the "go back and forth" UX: user can approve from either surface depending on where they are.
 
 ### Session API contract
 

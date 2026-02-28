@@ -769,7 +769,7 @@ uv run pytest vibecheck/tests/test_api.py -v
 - [ ] **`SessionManager` class** — discover and manage multiple sessions
   - `sessions: dict[str, SessionBridge]`
   - `discover()` — scan `~/.vibe/logs/session/`, return session metadata
-  - `attach(session_id)` — create SessionBridge, hook into AgentLoop
+  - `attach(session_id)` — create SessionBridge in `observe_only` mode (discovered sessions from unmanaged `vibe` processes cannot be live-controlled — Vibe has no IPC; live control requires `vibecheck-vibe`)
   - `detach(session_id)` — unhook callbacks, remove from active sessions
   - `get(session_id)` — return SessionBridge or raise 404
   - `list()` — return all sessions with status summary
@@ -818,10 +818,16 @@ This phase implements the core product promise: run Vibe in your terminal, walk 
 - [ ] **`attach_mode` field** on SessionBridge: `"live" | "replay" | "observe_only" | "managed"`
   - Default: `"managed"` (current behavior — bridge creates its own loop)
   - `"live"`: bridge attached to externally-created loop (via `attach_to_loop()`)
+  - `"observe_only"`: discovered unmanaged session, read-only (no callback control)
+- [ ] **`controllable` property** derived from `attach_mode`:
+  - `True` for `live`, `managed`, `replay` (bridge owns or can drive the loop)
+  - `False` for `observe_only` (no IPC to unmanaged process)
+  - Frontend uses `controllable` to show/hide approve, input, and message controls
 - [ ] **Update `state_payload()`** and **`SessionManager.session_detail()`** to include `attach_mode`
-- [ ] **Update `_run_agent_turn()`** to work when bridge doesn't own the `act()` call
-  - In `"live"` mode, events come via the observer/tee instead of iterating `act()` directly
-  - The TUI drives `act()` initially; bridge intercepts via callbacks and tees events
+- [ ] **Update `_run_agent_turn()`** for live mode
+  - Bridge is the **sole consumer** of `act()` in all modes (live and managed)
+  - In `"live"` mode, the bridge drives `act()` and tees events to both the TUI renderer and WebSocket
+  - The TUI does NOT call `act()` directly — it receives events from the bridge via `TuiBridge` callback
 - [ ] **`vibecheck/tests/test_bridge.py`** additions:
   - Test: `attach_to_loop()` wires callbacks on FakeAgentLoop
   - Test: `attach_mode` appears in `state_payload()` as `"live"`
@@ -849,9 +855,9 @@ uv run pytest vibecheck/tests/test_bridge.py -v
   - TUI input (`on_chat_input_container_submitted`) posts to `bridge.inject_message()`
   - Bridge's `_message_worker` calls `act()` and broadcasts events
   - TUI receives events via the tee callback and renders them
-- [ ] **Approval UI in TUI**: when bridge enters `waiting_approval`, TUI shows indicator
-  - Mobile is the primary approval surface; TUI shows "waiting for mobile approval" status
-  - TUI keyboard approve/deny is a stretch enhancement
+- [ ] **Approval UI in TUI**: when bridge enters `waiting_approval`, TUI shows approve/deny controls
+  - Either surface (TUI keyboard or mobile REST) can resolve the pending Future — first response wins
+  - Both surfaces show pending state; resolution broadcasts to the other via WebSocket/callback
 - [ ] **`vibecheck/tests/test_tui_bridge.py`**:
   - Mock TUI event handler, verify events reach it
   - Verify events reach both TUI and WebSocket consumers
@@ -882,6 +888,7 @@ uv run pytest vibecheck/tests/test_tui_bridge.py -v
   - `app.run()` — starts Textual TUI + uvicorn in same asyncio loop
 - [ ] **`[project.scripts]`** entry in `pyproject.toml`: `vibecheck-vibe = "vibecheck.launcher:launch"`
 - [ ] **Uvicorn config**: `log_level="warning"` to avoid terminal output interleaving with TUI
+- [ ] **Spike: Textual + uvicorn in same asyncio loop** — validate this works before building the full launcher. If it fails, fall back to running uvicorn in a background thread with cross-loop bridges. This is the highest technical risk in Phase 3.
 - [ ] **`vibecheck/tests/test_launcher.py`**:
   - Verify launcher creates components correctly (bridge, app, uvicorn config)
   - Verify `vibecheck-vibe` entry point is registered
@@ -1024,15 +1031,17 @@ npm run build
   - `app.mount("/", StaticFiles(directory="static", html=True), name="static")`
   - Fallback: serve `index.html` for all non-API routes (SPA routing)
 - [ ] **E2E test script** (`scripts/e2e_test.py`)
-  - Start vibecheck server
+  - Start `vibecheck-vibe` (live attach mode) or `uv run python -m vibecheck` (standalone bridge mode)
   - Connect WebSocket client
-  - Verify state event received
+  - Verify state event received with `attach_mode` field
   - Inject a message via POST `/api/sessions/{session_id}/message`
   - Verify UserMessage event on WebSocket
   - Simulate approval flow: set pending approval, POST `/api/sessions/{session_id}/approve`, verify resolution
+  - Verify terminal TUI session is controllable from REST API (live attach validation)
 - [ ] **Deploy to EC2**
   - Build frontend, push to EC2 (git pull or rsync)
-  - Start vibecheck: `uv run python -m vibecheck`
+  - Start via `vibecheck-vibe` (runs Textual TUI + WebSocket bridge in same process)
+  - Fallback: `uv run python -m vibecheck` for standalone bridge without TUI
   - Caddy proxies :7870 → https://vibecheck.shisa.ai
 - [ ] **Phone test checklist:**
   - [ ] Open `https://vibecheck.shisa.ai` → see UI
@@ -1218,7 +1227,7 @@ Stretch goals — implement if time allows. L7 (ElevenLabs TTS) is highest prior
 
 ### L7: Advanced Voice + ElevenLabs TTS
 
-> **Execution units (stretch):** These WUs activate only after Phase 4 gate is stable.
+> **Execution units (stretch):** These WUs activate only after Phase 5 gate is stable.
 
 #### WU-29: L7 Backend — ElevenLabs TTS Proxy
 
